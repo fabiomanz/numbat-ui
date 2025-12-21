@@ -6,40 +6,41 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let target_triple = env::var("TARGET").unwrap();
     let ext = if target_os == "windows" { ".exe" } else { "" };
-    let binary_name = format!("numbat-{}{}", target_triple, ext);
+
+    // We want to build the "numbat-repl" crate
+    // The binary name will be "numbat-repl-TRIPLE"
+    let binary_name = format!("numbat-repl-{}{}", target_triple, ext);
     let out_dir = Path::new("binaries");
     let dest_path = out_dir.join(&binary_name);
 
     if !dest_path.exists() {
-        println!("cargo:warning=Numbat binary not found. Compiling numbat-cli...");
+        println!("cargo:warning=Numbat REPL binary not found. Compiling numbat-repl...");
 
-        // Create binaries dir if not exists
         std::fs::create_dir_all(out_dir).unwrap();
 
-        // Build numbat-cli
-        // We use a custom target directory to avoid polluting the global cargo cache or project target
+        // Build the nested crate
         let status = Command::new("cargo")
             .args(&[
-                "install",
-                "numbat-cli",
-                "--locked",
-                "--root",
-                "target/numbat-build",
+                "build",
+                "--release",
+                "--manifest-path",
+                "../numbat-repl/Cargo.toml",
             ])
             .status()
-            .expect("Failed to run cargo install numbat-cli");
+            .expect("Failed to build numbat-repl");
 
         if !status.success() {
-            panic!("Failed to install numbat-cli");
+            panic!("Failed to build numbat-repl");
         }
 
-        // Move and rename binary
-        let compiled_name = format!("numbat{}", ext);
-        let src_path = Path::new("target/numbat-build/bin").join(&compiled_name);
-        std::fs::rename(&src_path, &dest_path).expect("Failed to move numbat binary");
+        // Move binary
+        // Note: cargo build --release puts it in numbat-repl/target/release/numbat-repl
+        let src_path =
+            Path::new("../numbat-repl/target/release").join(format!("numbat-repl{}", ext));
+        std::fs::rename(&src_path, &dest_path).expect("Failed to move numbat-repl binary");
 
         println!(
-            "cargo:warning=Numbat binary compiled and moved to {:?}",
+            "cargo:warning=Numbat REPL binary compiled and moved to {:?}",
             dest_path
         );
     }

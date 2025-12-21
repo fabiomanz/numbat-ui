@@ -26,12 +26,13 @@ fn async_pty_spawn(state: State<'_, PtyState>, window: tauri::Window) {
     let mut numbat_path = std::env::current_exe().expect("failed to get current exe");
     numbat_path.pop();
     if cfg!(target_os = "windows") {
-        numbat_path.push("numbat.exe");
+        numbat_path.push("numbat-repl.exe");
     } else {
-        numbat_path.push("numbat");
+        numbat_path.push("numbat-repl");
     }
 
     let cmd = CommandBuilder::new(numbat_path);
+
     let _child = pair
         .slave
         .spawn_command(cmd)

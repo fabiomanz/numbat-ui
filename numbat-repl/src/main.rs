@@ -1,0 +1,242 @@
+use anyhow::{bail, Result};
+use colored::Colorize;
+use numbat::command::{CommandControlFlow, CommandRunner};
+use numbat::compact_str::{CompactString, ToCompactString};
+use numbat::markup::{self as m, FormatType, FormattedString, Formatter, Markup};
+use numbat::module_importer::{BuiltinModuleImporter, ChainedImporter, FileSystemImporter};
+use numbat::resolver::CodeSource;
+use numbat::session_history::SessionHistory;
+use numbat::{Context, InterpreterSettings, NumbatError};
+use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
+use rustyline::{Completer, Editor, Helper, Highlighter, Hinter, Validator};
+use std::io::IsTerminal;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::{fs, thread};
+
+pub struct ANSIFormatter;
+
+impl Formatter for ANSIFormatter {
+    fn format_part(
+        &self,
+        FormattedString(_output_type, format_type, text): &FormattedString,
+    ) -> CompactString {
+        (match format_type {
+            FormatType::Whitespace => text.normal(),
+            FormatType::Emphasized => text.bold(),
+            FormatType::Dimmed => text.dimmed(),
+            FormatType::Text => text.normal(),
+            FormatType::String => text.green(),
+            FormatType::Keyword => text.magenta(),
+            FormatType::Value => text.yellow(),
+            FormatType::Unit => text.cyan(),
+            FormatType::Identifier => text.normal(),
+            FormatType::TypeIdentifier => text.blue().italic(),
+            FormatType::Operator => text.bold(),
+            FormatType::Decorator => text.green(),
+        })
+        .to_compact_string()
+    }
+}
+
+pub fn ansi_format(m: &Markup, indent: bool) -> CompactString {
+    ANSIFormatter {}.format(m, indent)
+}
+
+#[derive(Completer, Helper, Hinter, Validator, Highlighter)]
+struct NumbatHelper {
+    // Minimal helper, we can expand later
+}
+
+struct Cli {
+    context: Arc<Mutex<Context>>,
+}
+
+impl Cli {
+    fn make_fresh_context() -> Context {
+        let fs_importer = FileSystemImporter::default();
+        // Add default module paths if needed, simplified for embedded
+        let importer = ChainedImporter::new(
+            Box::new(fs_importer),
+            Box::<BuiltinModuleImporter>::default(),
+        );
+
+        let mut context = Context::new(importer);
+        context.set_terminal_width(
+            terminal_size::terminal_size().map(|(terminal_size::Width(w), _)| w as usize),
+        );
+        context
+    }
+
+    fn new() -> Result<Self> {
+        let mut context = Self::make_fresh_context();
+        // Load prelude by default
+        let _ = context.interpret("use prelude", CodeSource::Internal);
+
+        Ok(Self {
+            context: Arc::new(Mutex::new(context)),
+        })
+    }
+
+    fn run(&mut self) -> Result<()> {
+        #[cfg(windows)]
+        colored::control::set_virtual_terminal(true).unwrap();
+
+        // Load currency module in background if possible
+        let context_clone = self.context.clone();
+        thread::spawn(move || {
+            let _ = context_clone
+                .lock()
+                .unwrap()
+                .interpret("use units::currencies", CodeSource::Internal);
+        });
+
+        self.repl()
+    }
+
+    fn repl(&mut self) -> Result<()> {
+        let interactive = std::io::stdin().is_terminal();
+        let history_path = dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("numbat")
+            .join("history");
+
+        if let Some(parent) = history_path.parent() {
+            fs::create_dir_all(parent).ok();
+        }
+
+        let mut rl = Editor::<NumbatHelper, DefaultHistory>::new()?;
+        rl.set_helper(Some(NumbatHelper {}));
+        rl.load_history(&history_path).ok();
+
+        if interactive {
+            println!();
+            println!(
+                "  █▄░█ █░█ █▀▄▀█ █▄▄ ▄▀█ ▀█▀    Numbat {}",
+                env!("CARGO_PKG_VERSION")
+            );
+            println!("  █░▀█ █▄█ █░▀░█ █▄█ █▀█ ░█░    github.com/fabiomanz/numbat-ui");
+            println!();
+        }
+
+        let result = self.repl_loop(&mut rl, interactive);
+
+        if interactive {
+            rl.save_history(&history_path).ok();
+        }
+
+        result
+    }
+
+    fn repl_loop(
+        &mut self,
+        rl: &mut Editor<NumbatHelper, DefaultHistory>,
+        interactive: bool,
+    ) -> Result<()> {
+        let mut cmd_runner = CommandRunner::<Editor<NumbatHelper, DefaultHistory>>::new()
+            .print_with(|m| println!("{}", ansi_format(m, true)))
+            .enable_clear(|rl| match rl.clear_screen() {
+                Ok(_) => CommandControlFlow::Continue,
+                Err(_) => CommandControlFlow::Return,
+            })
+            .enable_save(SessionHistory::default())
+            .enable_reset(Self::make_fresh_context)
+            .enable_quit();
+
+        loop {
+            let readline = rl.readline(">>> ");
+            match readline {
+                Ok(line) => {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+
+                    rl.add_history_entry(&line)?;
+
+                    let mut ctx = self.context.lock().unwrap();
+                    match cmd_runner.try_run_command(&line, &mut ctx, rl) {
+                        Ok(cf) => match cf {
+                            CommandControlFlow::Continue => continue,
+                            CommandControlFlow::Return => return Ok(()),
+                            CommandControlFlow::NotACommand => {}
+                        },
+                        Err(err) => {
+                            ctx.print_diagnostic(*err);
+                            continue;
+                        }
+                    }
+                    drop(ctx);
+
+                    // Parse and evaluate
+                    let to_be_printed: Arc<Mutex<Vec<m::Markup>>> = Arc::new(Mutex::new(vec![]));
+                    let to_be_printed_c = to_be_printed.clone();
+                    let mut settings = InterpreterSettings {
+                        print_fn: Box::new(move |s: &m::Markup| {
+                            to_be_printed_c.lock().unwrap().push(s.clone());
+                        }),
+                    };
+
+                    let interpretation_result = self
+                        .context
+                        .lock()
+                        .unwrap()
+                        .interpret_with_settings(&mut settings, &line, CodeSource::Text);
+
+                    match interpretation_result {
+                        Ok((statements, interpreter_result)) => {
+                            let to_be_printed = to_be_printed.lock().unwrap();
+                            for s in to_be_printed.iter() {
+                                println!("{}", ansi_format(s, interactive));
+                            }
+
+                            let ctx = self.context.lock().unwrap();
+                            let registry = ctx.dimension_registry();
+                            let result_markup = interpreter_result.to_markup(
+                                statements.last(),
+                                registry,
+                                true, // interactive
+                                true, // pretty_print
+                            );
+                            print!("{}", ansi_format(&result_markup, false));
+                            if interpreter_result.is_value() {
+                                println!();
+                            }
+                        }
+                        Err(e) => {
+                            // Handle different error variants potentially
+                            match *e {
+                                NumbatError::ResolverError(e) => {
+                                    self.context.lock().unwrap().print_diagnostic(e)
+                                }
+                                NumbatError::NameResolutionError(e) => {
+                                    self.context.lock().unwrap().print_diagnostic(e)
+                                }
+                                NumbatError::TypeCheckError(e) => {
+                                    self.context.lock().unwrap().print_diagnostic(e)
+                                }
+                                NumbatError::RuntimeError(e) => {
+                                    self.context.lock().unwrap().print_diagnostic(e)
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(ReadlineError::Interrupted) => {}
+                Err(ReadlineError::Eof) => {
+                    return Ok(());
+                }
+                Err(err) => {
+                    bail!(err);
+                }
+            }
+        }
+    }
+}
+
+fn main() {
+    if let Err(e) = Cli::new().and_then(|mut cli| cli.run()) {
+        eprintln!("{e:#}");
+        std::process::exit(1);
+    }
+}

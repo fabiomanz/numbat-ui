@@ -1,0 +1,16 @@
+[package]
+name = "numbat-repl"
+version = "1.16.0"
+edition = "2021"
+
+[dependencies]
+portable-pty = "0.9.0"
+numbat = "1.16.0"
+rustyline = { version = "14.0", features = ["derive"] }
+anyhow = "1"
+dirs = "5"
+colored = "2"
+itertools = "0.12"
+toml = { version = "0.8", features = ["parse"] }
+terminal_size = "0.3"
+jiff = "0.1"

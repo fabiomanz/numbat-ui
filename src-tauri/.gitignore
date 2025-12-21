@@ -2,3 +2,4 @@
 # will have schema files for capabilities auto-completion
 /gen/schemas
 binaries/
+numbat-repl/target/
