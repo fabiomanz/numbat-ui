@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use colored::Colorize;
 use numbat::command::{CommandControlFlow, CommandRunner};
 use numbat::compact_str::{CompactString, ToCompactString};
+use numbat::diagnostic::ResolverDiagnostic;
 use numbat::markup::{self as m, FormatType, FormattedString, Formatter, Markup};
 use numbat::module_importer::{BuiltinModuleImporter, ChainedImporter, FileSystemImporter};
 use numbat::resolver::CodeSource;
@@ -133,14 +134,14 @@ impl Cli {
         rl: &mut Editor<NumbatHelper, DefaultHistory>,
         interactive: bool,
     ) -> Result<()> {
-        let cmd_runner = CommandRunner::<Editor<NumbatHelper, DefaultHistory>>::new()
+        let mut cmd_runner = CommandRunner::<Editor<NumbatHelper, DefaultHistory>>::new()
             .print_with(|m| println!("{}", ansi_format(m, true)))
             .enable_clear(|rl| match rl.clear_screen() {
                 Ok(_) => CommandControlFlow::Continue,
                 Err(_) => CommandControlFlow::Return,
             })
             .enable_save(SessionHistory::default())
-            .enable_reset(Self::make_fresh_context)
+            .enable_reset()
             .enable_quit();
 
         loop {
@@ -159,9 +160,19 @@ impl Cli {
                             CommandControlFlow::Continue => continue,
                             CommandControlFlow::Return => return Ok(()),
                             CommandControlFlow::NotACommand => {}
+                            CommandControlFlow::Reset => {
+                                *ctx = Self::make_fresh_context();
+                                continue;
+                            }
                         },
                         Err(err) => {
-                            ctx.print_diagnostic(*err);
+                            ctx.print_diagnostic(
+                                ResolverDiagnostic {
+                                    error: &*err,
+                                    resolver: ctx.resolver(),
+                                },
+                                interactive,
+                            );
                             continue;
                         }
                     }
@@ -203,20 +214,24 @@ impl Cli {
                             }
                         }
                         Err(e) => {
-                            // Handle different error variants potentially
+                            let ctx = self.context.lock().unwrap();
                             match *e {
                                 NumbatError::ResolverError(e) => {
-                                    self.context.lock().unwrap().print_diagnostic(e)
+                                    ctx.print_diagnostic(e, interactive)
                                 }
                                 NumbatError::NameResolutionError(e) => {
-                                    self.context.lock().unwrap().print_diagnostic(e)
+                                    ctx.print_diagnostic(e, interactive)
                                 }
                                 NumbatError::TypeCheckError(e) => {
-                                    self.context.lock().unwrap().print_diagnostic(e)
+                                    ctx.print_diagnostic(e, interactive)
                                 }
-                                NumbatError::RuntimeError(e) => {
-                                    self.context.lock().unwrap().print_diagnostic(e)
-                                }
+                                NumbatError::RuntimeError(e) => ctx.print_diagnostic(
+                                    ResolverDiagnostic {
+                                        error: &e,
+                                        resolver: ctx.resolver(),
+                                    },
+                                    interactive,
+                                ),
                             }
                         }
                     }
