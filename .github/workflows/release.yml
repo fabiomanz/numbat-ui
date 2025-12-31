@@ -50,7 +50,7 @@ jobs:
         if: "!contains(github.ref, '-')" # Skip prereleases
         with:
           formula-name: numbat-ui
-          formula-path: Formula/numbat-ui.rb
+          formula-path: Casks/numbat-ui.rb
           homebrew-tap: ${{ github.repository_owner }}/homebrew-tools
           base-branch: main
           download-url: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/numbat-ui_${{ steps.tauri.outputs.appVersion }}_universal.dmg
