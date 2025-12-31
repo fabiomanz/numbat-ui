@@ -15,6 +15,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{fs, thread};
 
+const NUMBAT_VERSION: &str = env!("NUMBAT_VERSION");
+
 pub struct ANSIFormatter;
 
 impl Formatter for ANSIFormatter {
@@ -112,10 +114,7 @@ impl Cli {
 
         if interactive {
             println!();
-            println!(
-                "  █▄░█ █░█ █▀▄▀█ █▄▄ ▄▀█ ▀█▀    Numbat {}",
-                env!("CARGO_PKG_VERSION")
-            );
+            println!("  █▄░█ █░█ █▀▄▀█ █▄▄ ▄▀█ ▀█▀    Numbat {}", NUMBAT_VERSION);
             println!("  █░▀█ █▄█ █░▀░█ █▄█ █▀█ ░█░    github.com/fabiomanz/numbat-ui");
             println!();
         }
@@ -134,7 +133,7 @@ impl Cli {
         rl: &mut Editor<NumbatHelper, DefaultHistory>,
         interactive: bool,
     ) -> Result<()> {
-        let mut cmd_runner = CommandRunner::<Editor<NumbatHelper, DefaultHistory>>::new()
+        let cmd_runner = CommandRunner::<Editor<NumbatHelper, DefaultHistory>>::new()
             .print_with(|m| println!("{}", ansi_format(m, true)))
             .enable_clear(|rl| match rl.clear_screen() {
                 Ok(_) => CommandControlFlow::Continue,
@@ -234,9 +233,10 @@ impl Cli {
     }
 }
 
-fn main() {
+pub fn run() -> Result<()> {
     if let Err(e) = Cli::new().and_then(|mut cli| cli.run()) {
         eprintln!("{e:#}");
         std::process::exit(1);
     }
+    Ok(())
 }

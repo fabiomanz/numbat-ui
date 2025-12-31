@@ -22,16 +22,11 @@ fn async_pty_spawn(state: State<'_, PtyState>, window: tauri::Window) {
         })
         .expect("Failed to create PTY");
 
-    // Resolve the path to the bundled sidecar
-    let mut numbat_path = std::env::current_exe().expect("failed to get current exe");
-    numbat_path.pop();
-    if cfg!(target_os = "windows") {
-        numbat_path.push("numbat-repl.exe");
-    } else {
-        numbat_path.push("numbat-repl");
-    }
+    // Resolve the path to the current executable (self-spawn)
+    let numbat_path = std::env::current_exe().expect("failed to get current exe");
 
-    let cmd = CommandBuilder::new(numbat_path);
+    let mut cmd = CommandBuilder::new(numbat_path);
+    cmd.args(&["--repl"]);
 
     let _child = pair
         .slave
