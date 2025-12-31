@@ -20,6 +20,8 @@ jobs:
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Node.js setup
         uses: actions/setup-node@v4
@@ -41,6 +43,7 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: false
           prerelease: false
+          args: --target universal-apple-darwin
 
       - name: Update Homebrew formula
         uses: mislav/bump-homebrew-formula-action@v3
@@ -50,7 +53,7 @@ jobs:
           formula-path: Formula/numbat-ui.rb
           homebrew-tap: ${{ github.repository_owner }}/homebrew-tools
           base-branch: main
-          download-url: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/numbat-ui_${{ steps.tauri.outputs.appVersion }}_x64.dmg
+          download-url: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/numbat-ui_${{ steps.tauri.outputs.appVersion }}_universal.dmg
           commit-message: "Update numbat-ui formula to {{version}}"
         env:
           COMMITTER_TOKEN: ${{ secrets.COMMITTER_TOKEN }}
