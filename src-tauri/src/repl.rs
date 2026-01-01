@@ -11,7 +11,6 @@ use numbat::{Context, InterpreterSettings, NumbatError};
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
 use rustyline::{Completer, Editor, Helper, Highlighter, Hinter, Validator};
-use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{fs, thread};
@@ -100,7 +99,6 @@ impl Cli {
     }
 
     fn repl(&mut self) -> Result<()> {
-        let interactive = std::io::stdin().is_terminal();
         let history_path = dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("numbat")
@@ -114,27 +112,18 @@ impl Cli {
         rl.set_helper(Some(NumbatHelper {}));
         rl.load_history(&history_path).ok();
 
-        if interactive {
-            println!();
-            println!("  █▄░█ █░█ █▀▄▀█ █▄▄ ▄▀█ ▀█▀    Numbat {}", NUMBAT_VERSION);
-            println!("  █░▀█ █▄█ █░▀░█ █▄█ █▀█ ░█░    github.com/fabiomanz/numbat-ui");
-            println!();
-        }
+        println!();
+        println!("  █▄░█ █░█ █▀▄▀█ █▄▄ ▄▀█ ▀█▀    Numbat {}", NUMBAT_VERSION);
+        println!("  █░▀█ █▄█ █░▀░█ █▄█ █▀█ ░█░    github.com/fabiomanz/numbat-ui");
+        println!();
 
-        let result = self.repl_loop(&mut rl, interactive);
-
-        if interactive {
-            rl.save_history(&history_path).ok();
-        }
+        let result = self.repl_loop(&mut rl);
+        rl.save_history(&history_path).ok();
 
         result
     }
 
-    fn repl_loop(
-        &mut self,
-        rl: &mut Editor<NumbatHelper, DefaultHistory>,
-        interactive: bool,
-    ) -> Result<()> {
+    fn repl_loop(&mut self, rl: &mut Editor<NumbatHelper, DefaultHistory>) -> Result<()> {
         let mut cmd_runner = CommandRunner::<Editor<NumbatHelper, DefaultHistory>>::new()
             .print_with(|m| println!("{}", ansi_format(m, true)))
             .enable_clear(|rl| match rl.clear_screen() {
@@ -172,7 +161,7 @@ impl Cli {
                                     error: &*err,
                                     resolver: ctx.resolver(),
                                 },
-                                interactive,
+                                true,
                             );
                             continue;
                         }
@@ -198,7 +187,7 @@ impl Cli {
                         Ok((statements, interpreter_result)) => {
                             let to_be_printed = to_be_printed.lock().unwrap();
                             for s in to_be_printed.iter() {
-                                println!("{}", ansi_format(s, interactive));
+                                println!("{}", ansi_format(s, true));
                             }
 
                             let ctx = self.context.lock().unwrap();
@@ -217,21 +206,17 @@ impl Cli {
                         Err(e) => {
                             let ctx = self.context.lock().unwrap();
                             match *e {
-                                NumbatError::ResolverError(e) => {
-                                    ctx.print_diagnostic(e, interactive)
-                                }
+                                NumbatError::ResolverError(e) => ctx.print_diagnostic(e, true),
                                 NumbatError::NameResolutionError(e) => {
-                                    ctx.print_diagnostic(e, interactive)
+                                    ctx.print_diagnostic(e, true)
                                 }
-                                NumbatError::TypeCheckError(e) => {
-                                    ctx.print_diagnostic(e, interactive)
-                                }
+                                NumbatError::TypeCheckError(e) => ctx.print_diagnostic(e, true),
                                 NumbatError::RuntimeError(e) => ctx.print_diagnostic(
                                     ResolverDiagnostic {
                                         error: &e,
                                         resolver: ctx.resolver(),
                                     },
-                                    interactive,
+                                    true,
                                 ),
                             }
                         }
