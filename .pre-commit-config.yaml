@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-check
+        name: cargo check
+        entry: cargo check --manifest-path src-tauri/Cargo.toml
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test --manifest-path src-tauri/Cargo.toml
+        language: system
+        types: [rust]
+        pass_filenames: false
