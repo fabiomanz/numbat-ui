@@ -20,6 +20,14 @@ Check the [Releases](https://github.com/fabio/numbat_ui/releases) page for the l
 *   **Windows**: `.exe` or `.msi`
 *   **Linux**: `.deb`, `.rpm`, or `.AppImage`
 
+### Homebrew (macOS)
+
+You can install Numbat UI via Homebrew:
+
+```bash
+brew install fabio/tools/numbat-ui
+```
+
 ### Build from Source
 
 If you prefer to build it yourself, ensure you have the following installed:
@@ -66,7 +74,7 @@ We welcome contributions! The project is structured as follows:
 To release a new version, run the following command:
 
 ```bash
-npm version <patch|minor|major> -m "Upgrade to %s for reasons"
+npm version <patch|minor|major>
 ```
 
 This will automatically:

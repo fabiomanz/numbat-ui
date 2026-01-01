@@ -73,9 +73,8 @@ impl Cli {
     }
 
     fn new() -> Result<Self> {
-        let mut context = Self::make_fresh_context();
-        // Load prelude by default
-        let _ = context.interpret("use prelude", CodeSource::Internal);
+        let context = Self::make_fresh_context();
+        // Prelude load is now deferred to run()
 
         Ok(Self {
             context: Arc::new(Mutex::new(context)),
@@ -86,13 +85,15 @@ impl Cli {
         #[cfg(windows)]
         colored::control::set_virtual_terminal(true).unwrap();
 
-        // Load currency module in background if possible
+        // Load prelude and currency module in background
+        // This allows the prompt to appear immediately.
+        // If the user types a command before this finishes, the main thread
+        // will block on the context lock, which is the desired behavior.
         let context_clone = self.context.clone();
         thread::spawn(move || {
-            let _ = context_clone
-                .lock()
-                .unwrap()
-                .interpret("use units::currencies", CodeSource::Internal);
+            let mut ctx = context_clone.lock().unwrap();
+            let _ = ctx.interpret("use prelude", CodeSource::Internal);
+            let _ = ctx.interpret("use units::currencies", CodeSource::Internal);
         });
 
         self.repl()

@@ -29,5 +29,10 @@ jobs:
           cd src-tauri
           cargo check --verbose
 
+      - name: Run Tests
+        run: |
+          cd src-tauri
+          cargo test --verbose
+
       - name: Check Frontend
         run: npm run check

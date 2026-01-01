@@ -42,7 +42,11 @@
           term.write(event.payload);
         },
       );
-      await invoke("async_pty_spawn");
+
+      const backlog = await invoke<string>("init_pty");
+      if (backlog) {
+        term.write(backlog);
+      }
 
       // Initial fit after spawn
       fitAddon.fit();
