@@ -14,7 +14,7 @@ Numbat UI brings the power of the Numbat scientific calculator to your desktop a
 
 ### Download Binaries
 
-Check the [Releases](https://github.com/fabio/numbat_ui/releases) page for the latest installers:
+Check the [Releases](https://github.com/fabiomanz/numbat-ui/releases) page for the latest installers:
 
 *   **macOS**: `.dmg` or `.app`
 *   **Windows**: `.exe` or `.msi`
@@ -25,7 +25,7 @@ Check the [Releases](https://github.com/fabio/numbat_ui/releases) page for the l
 You can install Numbat UI via Homebrew:
 
 ```bash
-brew install fabio/tools/numbat-ui
+brew install fabiomanz/tools/numbat-ui
 ```
 
 ### Build from Source
@@ -38,8 +38,8 @@ If you prefer to build it yourself, ensure you have the following installed:
 
 ```bash
 # Clone the repository
-git clone https://github.com/fabio/numbat_ui.git
-cd numbat_ui
+git clone https://github.com/fabiomanz/numbat-ui.git
+cd numbat-ui
 
 # Install frontend dependencies
 npm install
