@@ -1,6 +1,6 @@
 {
   "name": "numbat-ui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A native GUI for the Numbat scientific calculator.",
   "type": "module",
   "scripts": {
