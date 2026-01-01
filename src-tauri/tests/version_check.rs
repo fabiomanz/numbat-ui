@@ -16,25 +16,31 @@ fn test_numbat_version() {
 
     println!("Current local numbat version: {}", current_version);
 
-    // 2. Get the latest version from crates.io using cargo search
-    let output = Command::new("cargo")
-        .arg("search")
-        .arg("numbat")
+    // 2. Get the latest version from crates.io using the API (cargo search is flaky in CI)
+    let output = Command::new("curl")
+        .arg("-s")
+        .arg("https://crates.io/api/v1/crates/numbat")
+        .arg("-H")
+        .arg("User-Agent: numbat-ui-test (github.com/numbat/numbat-ui)")
         .output()
-        .expect("Failed to execute cargo search");
+        .expect("Failed to execute curl");
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        panic!("curl failed with status {}: {}", output.status, stderr);
+    }
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    // cargo search output format: numbat = "1.17.0"    # ...
 
-    // Simple parsing to extract the version
-    let latest_version_line = output_str
-        .lines()
-        .find(|line| line.starts_with("numbat = "))
-        .expect("Failed to find numbat in cargo search output");
-    let parts: Vec<&str> = latest_version_line.split('"').collect();
-    let latest_version = parts
-        .get(1)
-        .expect("Failed to parse version from cargo search output");
+    // Parse JSON safely
+    let json: serde_json::Value = serde_json::from_str(&output_str).expect(&format!(
+        "Failed to parse JSON from crates.io response: {}",
+        output_str
+    ));
+
+    let latest_version = json["crate"]["max_version"]
+        .as_str()
+        .expect("Failed to find crate.max_version in crates.io response");
 
     println!("Latest numbat version on crates.io: {}", latest_version);
 
