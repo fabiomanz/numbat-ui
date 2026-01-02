@@ -112,6 +112,7 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cmd = CommandBuilder::new(numbat_path);
     cmd.args(&["--repl"]);
+    cmd.env("TERM", "xterm-256color");
 
     let _child = pair
         .slave

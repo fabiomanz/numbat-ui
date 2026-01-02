@@ -84,6 +84,8 @@ impl Cli {
         #[cfg(windows)]
         let _ = colored::control::set_virtual_terminal(true);
 
+        colored::control::set_override(true);
+
         // Load prelude and currency module in background
         // This allows the prompt to appear immediately.
         // If the user types a command before this finishes, the main thread
