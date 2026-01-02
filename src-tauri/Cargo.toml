@@ -34,3 +34,6 @@ toml = { version = "0.8", features = ["parse"] }
 terminal_size = "0.3"
 jiff = "0.1"
 
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation"] }

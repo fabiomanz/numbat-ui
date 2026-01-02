@@ -82,7 +82,7 @@ impl Cli {
 
     fn run(&mut self) -> Result<()> {
         #[cfg(windows)]
-        colored::control::set_virtual_terminal(true).unwrap();
+        let _ = colored::control::set_virtual_terminal(true);
 
         // Load prelude and currency module in background
         // This allows the prompt to appear immediately.
@@ -235,6 +235,9 @@ impl Cli {
 }
 
 pub fn run() -> Result<()> {
+    #[cfg(windows)]
+    let _ = colored::control::set_virtual_terminal(true);
+
     if let Err(e) = Cli::new().and_then(|mut cli| cli.run()) {
         eprintln!("{e:#}");
         std::process::exit(1);

@@ -1,6 +1,7 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 mod repl;
+
+#[cfg(windows)]
+use windows_sys::Win32::System::Console::FreeConsole;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -10,6 +11,10 @@ fn main() {
             std::process::exit(1);
         }
     } else {
+        #[cfg(windows)]
+        unsafe {
+            FreeConsole();
+        }
         numbat_ui_lib::run();
     }
 }
