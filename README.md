@@ -78,9 +78,10 @@ npm version <patch|minor|major>
 ```
 
 This will automatically:
-1.  Update the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`.
-2.  Create a git commit with the version bump.
-3.  Create a git tag (e.g., `v1.2.3`).
+1.  Update the version using `npm version patch|minor|major`.
+2.  Run `scripts/sync-version.js` to update the version in `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`.
+3.  Create a git commit with the version bump.
+4.  Create a git tag (e.g., `v1.2.3`).
 
 Push the changes and the tag to GitHub to trigger the release workflow:
 
