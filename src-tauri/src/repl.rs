@@ -199,6 +199,7 @@ impl Cli {
                                 registry,
                                 true, // interactive
                                 true, // pretty_print
+                                &numbat::FormatOptions::default(),
                             );
                             print!("{}", ansi_format(&result_markup, false));
                             if interpreter_result.is_value() {
