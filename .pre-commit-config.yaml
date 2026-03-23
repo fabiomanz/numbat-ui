@@ -3,13 +3,13 @@ repos:
     hooks:
       - id: cargo-check
         name: cargo check
-        entry: cargo check --manifest-path src-tauri/Cargo.toml
+        entry: cargo check
         language: system
         types: [rust]
         pass_filenames: false
       - id: cargo-test
         name: cargo test
-        entry: cargo test --manifest-path src-tauri/Cargo.toml
+        entry: cargo test
         language: system
         types: [rust]
         pass_filenames: false

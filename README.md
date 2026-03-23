@@ -101,6 +101,8 @@ git push && git push --tags
 
 This project is open source and available under the [MIT License](LICENSE).
 
+*This application includes the **JetBrains Mono** font, licensed under the [SIL Open Font License 1.1](https://scripts.sil.org/OFL).*
+
 ## 🙏 Acknowledgments
 
 *   **[Sharkdp](https://github.com/sharkdp)** for creating [Numbat](https://github.com/sharkdp/numbat), an incredible scientific calculator.

@@ -51,9 +51,26 @@ impl NumbatApp {
         }
     }
 
+    pub fn restore_history(&mut self, history: Vec<String>) {
+        for cmd in history {
+            self.input = cmd;
+            self.submit_input();
+        }
+        self.input.clear();
+    }
+
     fn submit_input(&mut self) {
         let line = self.input.trim().to_string();
         if line.is_empty() {
+            return;
+        }
+
+        if line == "clear" {
+            self.history.clear();
+            self.cmd_history.clear();
+            self.cmd_history_idx = 0;
+            self.input.clear();
+            self.scroll_to_bottom = true;
             return;
         }
 
@@ -115,10 +132,23 @@ impl NumbatApp {
 }
 
 impl eframe::App for NumbatApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, &self.cmd_history);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Global shortcut: Ctrl-D to close
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::D)) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+
+        // Global shortcut: Ctrl-L to clear
+        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::L)) {
+            self.history.clear();
+            self.cmd_history.clear();
+            self.cmd_history_idx = 0;
+            self.input.clear();
+            self.scroll_to_bottom = true;
         }
 
         // Main Central Panel
@@ -134,34 +164,76 @@ impl eframe::App for NumbatApp {
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         ui.add_space(8.0);
-                        ui.label(egui::RichText::new("  █▄░█ █░█ █▀▄▀█ █▄▄ ▄▀█ ▀█▀    Numbat 1.23.0").monospace().color(egui::Color32::from_gray(200)));
+                        ui.label(egui::RichText::new(format!("  █▄░█ █░█ █▀▄▀█ █▄▄ ▄▀█ ▀█▀    Numbat {}", env!("NUMBAT_VERSION"))).monospace().color(egui::Color32::from_gray(200)));
                         ui.label(egui::RichText::new("  █░▀█ █▄█ █░▀░█ █▄█ █▀█ ░█░    github.com/fabiomanz/numbat-ui").monospace().color(egui::Color32::from_gray(200)));
                         ui.add_space(8.0);
                     });
 
-                    for item in &self.history {
-                        // Show the input
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(">>> ").color(egui::Color32::WHITE).monospace());
-                            ui.label(egui::RichText::new(&item.input).color(egui::Color32::WHITE).monospace());
+                    let mut delete_idx = None;
+                    let mut clear_all = false;
+
+                    for (idx, item) in self.history.iter().enumerate() {
+                        let item_response = ui.vertical(|ui| {
+                            ui.set_min_width(ui.available_width());
+
+                            // Show the input
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(ui.available_width(), 24.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    let hovered = ui.rect_contains_pointer(ui.max_rect());
+                                    
+                                    ui.label(egui::RichText::new(">>> ").color(egui::Color32::WHITE).monospace());
+                                    ui.label(egui::RichText::new(&item.input).color(egui::Color32::WHITE).monospace());
+                                    
+                                    // Show trash icon on hover
+                                    if hovered {
+                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                            if ui.button("🗑").on_hover_text("Delete item").clicked() {
+                                                delete_idx = Some(idx);
+                                            }
+                                        });
+                                    }
+                                }
+                            );
+                            
+                            // Show the printed output (if any)
+                            for printed in &item.output_printed {
+                                ui.label(markup_to_layout_job(printed));
+                            }
+                            
+                            // Show result
+                            if let Some(res) = &item.output_result {
+                                ui.label(markup_to_layout_job(res));
+                            }
+                            
+                            // Show error
+                            if let Some(err) = &item.error {
+                                ui.label(egui::RichText::new(err).color(egui::Color32::RED).monospace());
+                            }
+                            
+                            ui.add_space(8.0);
+                        }).response;
+
+                        // Context menu for the whole item
+                        item_response.context_menu(|ui| {
+                            if ui.button("🗑 Delete this item").clicked() {
+                                delete_idx = Some(idx);
+                                ui.close_menu();
+                            }
+                            if ui.button("🧹 Clear all history").clicked() {
+                                clear_all = true;
+                                ui.close_menu();
+                            }
                         });
-                        
-                        // Show the printed output (if any)
-                        for printed in &item.output_printed {
-                            ui.label(markup_to_layout_job(printed));
-                        }
-                        
-                        // Show result
-                        if let Some(res) = &item.output_result {
-                            ui.label(markup_to_layout_job(res));
-                        }
-                        
-                        // Show error
-                        if let Some(err) = &item.error {
-                            ui.label(egui::RichText::new(err).color(egui::Color32::RED).monospace());
-                        }
-                        
-                        ui.add_space(8.0);
+                    }
+
+                    if clear_all {
+                        self.history.clear();
+                        self.cmd_history.clear();
+                        self.cmd_history_idx = 0;
+                    } else if let Some(idx) = delete_idx {
+                        self.history.remove(idx);
                     }
 
                     // Input box at the bottom
@@ -173,6 +245,7 @@ impl eframe::App for NumbatApp {
                                 .font(egui::TextStyle::Monospace)
                                 .text_color(egui::Color32::WHITE)
                                 .desired_width(f32::INFINITY)
+                                .margin(egui::vec2(0.0, 0.0))
                                 .frame(false)
                         );
                         
