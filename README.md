@@ -1,24 +1,24 @@
 # Numbat UI
 
-> A beautiful, native, cross-platform wrapper for the [Numbat](https://numbat.dev/) scientific calculator.
+> A beautiful, native, cross-platform UI for the [Numbat](https://numbat.dev/) scientific calculator.
 
-Numbat UI brings the power of the Numbat scientific calculator to your desktop as a standalone application. Built with [Tauri](https://tauri.app/) and [Svelte 5](https://svelte.dev/), it offers a seamless, native experience on macOS, Windows, and Linux.
+Numbat UI brings the power of the Numbat scientific calculator to your desktop as a standalone application. Built purely in [Rust](https://www.rust-lang.org/) using [egui](https://github.com/emilk/egui), it offers a fast, native experience with zero web-views on macOS, Windows, and Linux.
 
 ## Features
 
 *   **Cross-Platform**: Runs natively on macOS, Windows, and Linux.
-*   **Native Experience**: Utilizes system-native window frame and controls.
-*   **Full Terminal Emulation**: Integrated `xterm.js` and `portable-pty` provide a robust CLI experience with full support for Numbat's features (syntax highlighting, history, interactive prompts).
+*   **Native Experience**: Fully written in Rust for exceptional performance and low resource usage.
+*   **Integrated Calculator**: Seamless experience with Numbat's powerful features (syntax highlighting, history, interactive prompts).
 
 ## Installation
 
 ### Download Binaries
 
-Check the [Releases](https://github.com/fabiomanz/numbat-ui/releases) page for the latest installers:
+Check the [Releases](https://github.com/fabiomanz/numbat-ui/releases) page for the latest executables:
 
-*   **macOS**: `.dmg` or `.app`
-*   **Windows**: `.exe` or `.msi`
-*   **Linux**: `.deb`, `.rpm`, or `.AppImage`
+*   **macOS**: Intel (`x86_64`) or Apple Silicon (`aarch64`)
+*   **Windows**: `.exe` built for `x86_64`
+*   **Linux**: Executable built for `x86_64`
 
 ### Homebrew (macOS)
 
@@ -33,55 +33,49 @@ brew install fabiomanz/tools/numbat-ui
 If you prefer to build it yourself, ensure you have the following installed:
 
 *   [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-*   [Node.js](https://nodejs.org/) (LTS recommended)
-*   [Numbat](https://github.com/sharkdp/numbat) (The `numbat` binary must be in your system PATH)
+
 
 ```bash
 # Clone the repository
 git clone https://github.com/fabiomanz/numbat-ui.git
 cd numbat-ui
 
-# Install frontend dependencies
-npm install
-
-# Run in development mode (hot-reload)
-npm run tauri dev
+# Run in development mode
+cargo run
 
 # Build for production
-npm run tauri build
+cargo build --release
 ```
 
 ## 🛠️ Development
 
-We welcome contributions! The project is structured as follows:
+We welcome contributions! The project is structured entirely around Rust and egui.
 
-*   `src/`: Svelte 5 frontend code.
-    *   `components/Terminal.svelte`: The core terminal component wrapping xterm.js.
-*   `src-tauri/`: Rust backend code.
-    *   `src/lib.rs`: Handles PTY spawning and communication.
+*   `src/`: Application source code, containing egui components and application state handling.
+*   `tests/`: Integration tests.
 
 ### Key Commands
 
 | Command | Description |
-|Args|Description|
 |---|---|
-| `npm run tauri dev` | Starts the app in dev mode. |
-| `npm run tauri build` | Builds a production bundle. |
-| `npm run tauri icon` | Regenerates app icons from source. |
+| `cargo run` | Starts the app in dev mode. |
+| `cargo build --release` | Builds an optimized binary in `target/release`. |
+| `cargo test` | Runs the test suite. |
 
 ### Releasing
 
-To release a new version, run the following command:
+To release a new version, run the following command to update `Cargo.toml`:
 
 ```bash
-npm version <patch|minor|major>
+cargo install cargo-edit # If you do not have cargo set-version
+cargo set-version <patch|minor|major>
 ```
 
-This will automatically:
-1.  Update the version using `npm version patch|minor|major`.
-2.  Run `scripts/sync-version.js` to update the version in `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`.
-3.  Create a git commit with the version bump.
-4.  Create a git tag (e.g., `v1.2.3`).
+Alternatively, just update `version` in `Cargo.toml`.
+
+Then:
+1.  Create a git commit with the version bump.
+2.  Create a git tag (e.g., `v1.2.3`).
 
 Push the changes and the tag to GitHub to trigger the release workflow:
 
@@ -106,4 +100,4 @@ This project is open source and available under the [MIT License](LICENSE).
 ## 🙏 Acknowledgments
 
 *   **[Sharkdp](https://github.com/sharkdp)** for creating [Numbat](https://github.com/sharkdp/numbat), an incredible scientific calculator.
-*   The **[Tauri](https://tauri.app/)** team for the amazing framework.
+*   The **[egui](https://github.com/emilk/egui)** UI library.

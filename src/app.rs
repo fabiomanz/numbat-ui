@@ -22,6 +22,7 @@ pub struct NumbatApp {
     cmd_history: Vec<String>,
     cmd_history_idx: usize,
     scroll_to_bottom: bool,
+    last_dead_key: Option<String>,
 }
 
 impl NumbatApp {
@@ -48,6 +49,7 @@ impl NumbatApp {
             cmd_history: Vec::new(),
             cmd_history_idx: 0,
             scroll_to_bottom: false,
+            last_dead_key: None,
         }
     }
 
@@ -132,6 +134,10 @@ impl NumbatApp {
 }
 
 impl eframe::App for NumbatApp {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        crate::macos_ime::fix_macos_dead_keys(raw_input, &mut self.last_dead_key);
+    }
+
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, &self.cmd_history);
     }
@@ -173,47 +179,72 @@ impl eframe::App for NumbatApp {
                     let mut clear_all = false;
 
                     for (idx, item) in self.history.iter().enumerate() {
-                        let item_response = ui.vertical(|ui| {
-                            ui.set_min_width(ui.available_width());
+                        let item_response = ui.push_id(idx, |ui| {
+                            ui.vertical(|ui| {
+                                ui.set_min_width(ui.available_width());
 
-                            // Show the input
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(ui.available_width(), 24.0),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| {
-                                    let hovered = ui.rect_contains_pointer(ui.max_rect());
-                                    
-                                    ui.label(egui::RichText::new(">>> ").color(egui::Color32::WHITE).monospace());
-                                    ui.label(egui::RichText::new(&item.input).color(egui::Color32::WHITE).monospace());
-                                    
-                                    // Show trash icon on hover
-                                    if hovered {
-                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                            if ui.button("🗑").on_hover_text("Delete item").clicked() {
+                                macro_rules! add_ctx_menu {
+                                    ($res:expr) => {
+                                        $res.context_menu(|ui| {
+                                            if ui.button("🗑 Delete this item").clicked() {
                                                 delete_idx = Some(idx);
+                                                ui.close_menu();
                                             }
-                                        });
-                                    }
+                                            if ui.button("🚫 Clear all history").clicked() {
+                                                clear_all = true;
+                                                ui.close_menu();
+                                            }
+                                        })
+                                    };
                                 }
-                            );
-                            
-                            // Show the printed output (if any)
-                            for printed in &item.output_printed {
-                                ui.label(markup_to_layout_job(printed));
-                            }
-                            
-                            // Show result
-                            if let Some(res) = &item.output_result {
-                                ui.label(markup_to_layout_job(res));
-                            }
-                            
-                            // Show error
-                            if let Some(err) = &item.error {
-                                ui.label(egui::RichText::new(err).color(egui::Color32::RED).monospace());
-                            }
-                            
-                            ui.add_space(8.0);
-                        }).response;
+
+                                // Show the input
+                                let input_res = ui.allocate_ui_with_layout(
+                                    egui::vec2(ui.available_width(), 24.0),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        let hovered = ui.rect_contains_pointer(ui.max_rect());
+                                        
+                                        let r1 = ui.label(egui::RichText::new(">>> ").color(egui::Color32::WHITE).monospace());
+                                        add_ctx_menu!(r1);
+                                        let r2 = ui.label(egui::RichText::new(&item.input).color(egui::Color32::WHITE).monospace());
+                                        add_ctx_menu!(r2);
+                                        
+                                        // Show trash icon on hover
+                                        if hovered {
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                let btn = ui.button("🗑").on_hover_text("Delete item");
+                                                if btn.clicked() {
+                                                    delete_idx = Some(idx);
+                                                }
+                                                add_ctx_menu!(btn);
+                                            });
+                                        }
+                                    }
+                                ).response;
+                                add_ctx_menu!(input_res);
+                                
+                                // Show the printed output (if any)
+                                for printed in &item.output_printed {
+                                    let r = ui.label(markup_to_layout_job(printed));
+                                    add_ctx_menu!(r);
+                                }
+                                
+                                // Show result
+                                if let Some(res) = &item.output_result {
+                                    let r = ui.label(markup_to_layout_job(res));
+                                    add_ctx_menu!(r);
+                                }
+                                
+                                // Show error
+                                if let Some(err) = &item.error {
+                                    let r = ui.label(egui::RichText::new(err).color(egui::Color32::RED).monospace());
+                                    add_ctx_menu!(r);
+                                }
+                                
+                                ui.add_space(8.0);
+                            }).response
+                        }).inner;
 
                         // Context menu for the whole item
                         item_response.context_menu(|ui| {
@@ -221,7 +252,7 @@ impl eframe::App for NumbatApp {
                                 delete_idx = Some(idx);
                                 ui.close_menu();
                             }
-                            if ui.button("🧹 Clear all history").clicked() {
+                            if ui.button("🚫 Clear all history").clicked() {
                                 clear_all = true;
                                 ui.close_menu();
                             }
@@ -242,7 +273,7 @@ impl eframe::App for NumbatApp {
                         
                         let response = ui.add(
                             egui::TextEdit::singleline(&mut self.input)
-                                .font(egui::TextStyle::Monospace)
+                                .code_editor()
                                 .text_color(egui::Color32::WHITE)
                                 .desired_width(f32::INFINITY)
                                 .margin(egui::vec2(0.0, 0.0))

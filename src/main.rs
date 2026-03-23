@@ -1,5 +1,6 @@
 mod app;
 mod format;
+mod macos_ime;
 
 fn main() -> eframe::Result {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
