@@ -26,3 +26,8 @@ toml = "1.0.6"
 
 [build-dependencies]
 toml = "1.0.6"
+
+[package.metadata.bundle]
+name = "Numbat"
+identifier = "com.fabio.numbat-ui"
+icon = ["src/icons/icon.icns"]

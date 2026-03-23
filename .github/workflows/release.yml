@@ -4,6 +4,9 @@ on:
     tags:
       - 'v*'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
 
@@ -44,10 +47,18 @@ jobs:
       - name: Build the app
         run: cargo build --release --target ${{ matrix.targets }}
 
-      - name: Prepare Artifact (Unix)
-        if: matrix.platform != 'windows-latest'
+      - name: Prepare Artifact (Linux)
+        if: matrix.platform == 'ubuntu-latest'
         run: |
           mv target/${{ matrix.targets }}/release/numbat-ui ${{ matrix.artifact_name }}
+
+      - name: Prepare Artifact (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          cargo install cargo-bundle
+          cargo bundle --release --target ${{ matrix.targets }}
+          cd "target/${{ matrix.targets }}/release/bundle/osx"
+          zip -r "../../../../../${{ matrix.artifact_name }}.zip" "Numbat.app"
 
       - name: Prepare Artifact (Windows)
         if: matrix.platform == 'windows-latest'
@@ -59,7 +70,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: ${{ matrix.artifact_name }}
+          files: ${{ matrix.artifact_name }}*
 
       - name: Update Homebrew formula
         uses: mislav/bump-homebrew-formula-action@v3
@@ -69,7 +80,7 @@ jobs:
           formula-path: Casks/numbat-ui.rb
           homebrew-tap: ${{ github.repository_owner }}/homebrew-tools
           base-branch: main
-          download-url: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/numbat-ui-macos-aarch64
+          download-url: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/numbat-ui-macos-aarch64.zip
           commit-message: "Update numbat-ui formula to {{version}}"
         env:
           COMMITTER_TOKEN: ${{ secrets.COMMITTER_TOKEN }}
