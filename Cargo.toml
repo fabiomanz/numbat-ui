@@ -1,35 +1,39 @@
 [package]
 name = "numbat-ui"
-version = "2.0.2"
+version = "3.0.0"
 description = "A native GUI for the Numbat scientific calculator."
 authors = ["Fabio Manz"]
 edition = "2021"
 
 [dependencies]
 eframe = { version = "0.34", features = ["persistence"] }
-serde = { version = "1", features = ["derive"] }
 egui = "0.34"
+serde = { version = "1", features = ["derive"] }
 env_logger = "0.11"
 log = "0.4"
 numbat = "1.23.0"
-anyhow = "1"
-colored = "3"
-itertools = "0.14"
-image = { version = "0.25.10", features = ["png"] }
+codespan-reporting = "0.12"
+global-hotkey = "0.8"
+image = { version = "0.25", features = ["png"] }
 dirs = "5.0"
 toml = "1.0.6"
+ron = "0.8"
+auto-launch = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
 muda = "0.17"
-
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation"] }
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSResponder", "NSRunningApplication", "NSImage"] }
+objc2-foundation = { version = "0.3", features = ["NSData"] }
 
 [dev-dependencies]
 serde_json = "1.0.149"
-toml = "1.0.6"
 
 [build-dependencies]
 toml = "1.0.6"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
 [package.metadata.bundle]
 name = "Numbat"

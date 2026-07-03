@@ -6,9 +6,33 @@ Numbat UI brings the power of the Numbat scientific calculator to your desktop a
 
 ## Features
 
-*   **Cross-Platform**: Runs natively on macOS, Windows, and Linux.
-*   **Native Experience**: Fully written in Rust for exceptional performance and low resource usage.
-*   **Integrated Calculator**: Seamless experience with Numbat's powerful features (syntax highlighting, history, interactive prompts).
+*   **Quick panel** — press a global hotkey (default: `Option+Space` on macOS, `Ctrl+Alt+Space` elsewhere) anywhere in your OS to summon a Spotlight-style calculator. Type, read the result, copy it, and dismiss — or press `Cmd/Ctrl+Enter` to continue the calculation in the full window.
+*   **Live results** — the answer appears as you type, before you press Enter.
+*   **Copy anywhere** — click any result to copy it; `Cmd/Ctrl+Shift+C` copies the latest one.
+*   **Full Numbat power** — physical units, conversions, variables, functions, currencies, and readable compiler-style error messages with source spans.
+*   **Tab completion** — complete unit, function and variable names with `Tab`.
+*   **Persistent sessions** — your history (and all definitions in it) survive restarts; the quick panel and main window share one session.
+*   **Background mode** — closing the window removes the app from the Dock but keeps the hotkey alive; optionally launch (hidden) at login so the quick panel is always one keystroke away.
+*   **Modern UI** — dark and light themes (follows the system by default), card-based history with syntax highlighting.
+*   **Cross-platform & native** — one Rust binary for macOS, Windows and Linux. No Electron, no web-view.
+
+## Keyboard reference
+
+| Keys | Action |
+|---|---|
+| `Option+Space` / `Ctrl+Alt+Space` | Toggle the quick panel (global, configurable) |
+| `Enter` | Evaluate |
+| `Cmd/Ctrl+Enter` | (quick panel) Continue in the full window |
+| `Cmd/Ctrl+C` | (quick panel) Copy the current result |
+| `Cmd/Ctrl+Shift+C` | Copy the latest result |
+| `Tab` | Complete names; press again to cycle candidates |
+| `↑` / `↓` | Browse input history |
+| `Cmd/Ctrl+L` | Clear the history view |
+| `Esc` | Dismiss the quick panel / completion popup |
+
+The prompt also understands the REPL commands `help`, `list`, `info <name>`, `clear` and `reset`.
+
+> Closing the main window keeps Numbat running in the background (on macOS it also leaves the Dock) so the quick panel stays available. Quit for real via the menu or `Cmd/Ctrl+Q`. Enable *Launch at login* in the settings to have the hotkey ready right after boot — the app then starts hidden (`--hidden` flag).
 
 ## Installation
 
@@ -16,13 +40,11 @@ Numbat UI brings the power of the Numbat scientific calculator to your desktop a
 
 Check the [Releases](https://github.com/fabiomanz/numbat-ui/releases) page for the latest executables:
 
-*   **macOS**: Intel (`x86_64`) or Apple Silicon (`aarch64`)
+*   **macOS**: universal app bundle (Intel + Apple Silicon)
 *   **Windows**: `.exe` built for `x86_64`
-*   **Linux**: Executable built for `x86_64`
+*   **Linux**: executable built for `x86_64` (the global hotkey requires X11/XWayland)
 
 ### Homebrew (macOS)
-
-You can install Numbat UI via Homebrew:
 
 ```bash
 brew install fabiomanz/tools/numbat-ui
@@ -30,13 +52,9 @@ brew install fabiomanz/tools/numbat-ui
 
 ### Build from Source
 
-If you prefer to build it yourself, ensure you have the following installed:
-
-*   [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-
+Requires [Rust](https://www.rust-lang.org/tools/install) (latest stable).
 
 ```bash
-# Clone the repository
 git clone https://github.com/fabiomanz/numbat-ui.git
 cd numbat-ui
 
@@ -47,14 +65,29 @@ cargo run
 cargo build --release
 ```
 
+## Configuration
+
+Settings live in the app (gear icon, or `Cmd+,` on macOS) and are stored as TOML in your config directory (e.g. `~/Library/Application Support/numbat-ui/config.toml` on macOS):
+
+```toml
+[formatting]
+digit-separator = "_"          # "_", ",", " ", "'" or "" to disable
+digit-grouping-threshold = 6   # group digits starting at this many
+significant-digits = 6
+
+[ui]
+theme = "system"               # "system", "dark" or "light"
+quick-panel-hotkey = "Alt+Space"
+font-size = 14.0
+launch-at-login = false        # start hidden at login (managed from the settings UI)
+```
+
+On first launch, formatting options are migrated from an existing numbat CLI config if present.
+
 ## 🛠️ Development
 
-We welcome contributions! The project is structured entirely around Rust and egui.
-
-*   `src/`: Application source code, containing egui components and application state handling.
-*   `tests/`: Integration tests.
-
-### Key Commands
+*   `src/` — application code: `engine.rs` (numbat wrapper), `session.rs` (shared calculator session), `ui/` (main window, quick panel, settings), `theme.rs`, `hotkey.rs`, `platform.rs`.
+*   `tests/` — integration tests.
 
 | Command | Description |
 |---|---|
@@ -62,26 +95,17 @@ We welcome contributions! The project is structured entirely around Rust and egu
 | `cargo build --release` | Builds an optimized binary in `target/release`. |
 | `cargo test` | Runs the test suite. |
 
+Debug builds include a screenshot harness for UI verification: `NUMBAT_UI_SHOT=/tmp/shots cargo run` captures the main window, quick panel and settings as PNGs, then exits.
+
 ### Releasing
 
-To release a new version, run the following command to update `Cargo.toml`:
-
-```bash
-cargo install cargo-edit # If you do not have cargo set-version
-cargo set-version <patch|minor|major>
-```
-
-Alternatively, just update `version` in `Cargo.toml`.
-
-Then:
-1.  Create a git commit with the version bump.
-2.  Create a git tag (e.g., `v1.2.3`).
-
-Push the changes and the tag to GitHub to trigger the release workflow:
+Update `version` in `Cargo.toml` (or `cargo set-version <patch|minor|major>` from cargo-edit), commit, tag (e.g. `v3.0.0`), then:
 
 ```bash
 git push && git push --tags
 ```
+
+The release workflow builds and uploads binaries for all platforms and bumps the Homebrew formula.
 
 ## 🤝 Contributing
 
