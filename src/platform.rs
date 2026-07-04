@@ -45,6 +45,33 @@ mod macos {
             NSApplicationActivationPolicy::Accessory
         };
         app.setActivationPolicy(policy);
+        if visible {
+            // Returning to the Regular policy can reset the Dock tile to
+            // the generic executable icon; re-apply ours.
+            set_dock_icon();
+        }
+    }
+
+    /// Calls `on_activate` (on the main thread) whenever the app becomes
+    /// active — e.g. it is re-opened through the Finder, Spotlight or the
+    /// Dock while already running in the background.
+    pub fn observe_app_activation(on_activate: impl Fn() + 'static) {
+        use block2::RcBlock;
+        use objc2_app_kit::NSApplicationDidBecomeActiveNotification;
+        use objc2_foundation::{NSNotification, NSNotificationCenter, NSOperationQueue};
+
+        let block = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| on_activate());
+        unsafe {
+            let center = NSNotificationCenter::defaultCenter();
+            let token = center.addObserverForName_object_queue_usingBlock(
+                Some(NSApplicationDidBecomeActiveNotification),
+                None,
+                Some(&NSOperationQueue::mainQueue()),
+                &block,
+            );
+            // The observer lives for the whole app lifetime.
+            std::mem::forget(token);
+        }
     }
 
     /// Actions triggered from the native menu bar.

@@ -29,6 +29,11 @@ fn main() -> eframe::Result {
         .with_min_inner_size([420.0, 320.0])
         .with_transparent(true)
         .with_visible(!start_hidden)
+        // A hidden start keeps the window technically visible but
+        // imperceptible (borderless, transparent, click-through) instead of
+        // OS-hidden: eframe renders hidden windows without an event-loop
+        // context and could then never create the quick panel window.
+        .with_decorations(!start_hidden)
         .with_app_id("numbat-ui");
 
     // Window icon (macOS uses the bundle's .icns instead).

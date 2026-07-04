@@ -35,6 +35,16 @@ pub fn reconcile(wanted: bool) {
     if !wanted {
         return;
     }
+    // A bare binary (e.g. a dev build run from the repo) must not hijack a
+    // registration that points at the installed .app bundle.
+    #[cfg(target_os = "macos")]
+    if !std::env::current_exe()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .contains(".app/Contents/MacOS/")
+    {
+        return;
+    }
     if let Err(e) = set_enabled(true) {
         log::warn!("{e}");
     }

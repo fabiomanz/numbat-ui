@@ -34,6 +34,9 @@ pub struct NumbatApp {
     pub quick_position: Option<egui::Pos2>,
     pub show_settings: bool,
     quitting: bool,
+    /// Consecutive frames on which the quick panel window could not be
+    /// created (see the catch_unwind in `ui`).
+    quick_panel_retries: u8,
 
     // Settings dialog state.
     pub settings_draft: AppConfig,
@@ -46,6 +49,12 @@ pub struct NumbatApp {
     last_dead_key: Option<String>,
     #[cfg(target_os = "macos")]
     menu: crate::platform::MacMenu,
+    /// Set (from a notification observer) when the app becomes active, so a
+    /// re-open from the Finder/Spotlight/Dock can bring the window back.
+    #[cfg(target_os = "macos")]
+    reactivated: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    #[cfg(target_os = "macos")]
+    started_at: std::time::Instant,
 
     /// Frame counter for the debug screenshot harness (`NUMBAT_UI_SHOT`).
     #[cfg(debug_assertions)]
@@ -67,6 +76,30 @@ impl NumbatApp {
                 crate::platform::set_dock_visible(false);
             }
         }
+
+        if start_hidden {
+            // The imperceptible-window trick (see `hide_main_window`);
+            // eframe force-shows the window after the first painted frame,
+            // even when it was requested hidden.
+            cc.egui_ctx
+                .send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::MousePassthrough(true));
+        }
+
+        // Re-opening the app (Finder, Spotlight, Dock) while it runs hidden
+        // in the background only *activates* the existing instance; watch for
+        // that so the main window can be brought back.
+        #[cfg(target_os = "macos")]
+        let reactivated = {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            let flag = std::sync::Arc::new(AtomicBool::new(false));
+            let observer_flag = std::sync::Arc::clone(&flag);
+            let ctx = cc.egui_ctx.clone();
+            crate::platform::observe_app_activation(move || {
+                observer_flag.store(true, Ordering::SeqCst);
+                ctx.request_repaint();
+            });
+            flag
+        };
 
         let mut session = Session::new(Engine::new(config.format_options()));
         session.restore_history();
@@ -97,6 +130,7 @@ impl NumbatApp {
             quick_position: None,
             show_settings: false,
             quitting: false,
+            quick_panel_retries: 0,
             settings_error: None,
             hotkey,
             hotkey_error,
@@ -104,6 +138,10 @@ impl NumbatApp {
             last_dead_key: None,
             #[cfg(target_os = "macos")]
             menu: crate::platform::MacMenu::install(),
+            #[cfg(target_os = "macos")]
+            reactivated,
+            #[cfg(target_os = "macos")]
+            started_at: std::time::Instant::now(),
             #[cfg(debug_assertions)]
             debug_frame: 0,
         }
@@ -213,15 +251,25 @@ impl NumbatApp {
         self.main_visible = true;
         #[cfg(target_os = "macos")]
         crate::platform::set_dock_visible(true);
+        ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Decorations(true));
+        ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::MousePassthrough(false));
         ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Visible(true));
         ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Focus);
     }
 
+    /// "Hides" the main window by making it imperceptible — borderless,
+    /// click-through and painting nothing — instead of actually hiding it.
+    /// eframe renders OS-hidden windows without an event-loop context and
+    /// can then never create new viewport windows, so a truly hidden main
+    /// window would make opening the quick panel panic.
     fn hide_main_window(&mut self, ctx: &egui::Context) {
         self.main_visible = false;
-        ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Visible(false));
+        ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Decorations(false));
+        ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::MousePassthrough(true));
         // Without any window, the app should disappear from the Dock too;
-        // it stays reachable through the global hotkey.
+        // it stays reachable through the global hotkey. Dropping to the
+        // Accessory policy also deactivates the app, so keyboard focus
+        // returns to the previously active app.
         #[cfg(target_os = "macos")]
         crate::platform::set_dock_visible(false);
     }
@@ -332,6 +380,21 @@ impl eframe::App for NumbatApp {
             self.toggle_quick_panel();
         }
 
+        // The app was re-opened (Finder, Spotlight, Dock) while running
+        // hidden in the background: bring the main window back. The startup
+        // grace period keeps a `--hidden` login launch in the background.
+        #[cfg(target_os = "macos")]
+        if self
+            .reactivated
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+            && !self.main_visible
+            && !self.quick_open
+            && !self.show_settings
+            && self.started_at.elapsed().as_secs() >= 2
+        {
+            self.open_main_window(&ctx);
+        }
+
         // Closing the main window hides it; the app keeps running so the
         // quick panel remains summonable. Quitting goes through `quit()`.
         if ctx.input(|i| i.viewport().close_requested()) && !self.quitting {
@@ -346,7 +409,27 @@ impl eframe::App for NumbatApp {
         }
 
         if self.quick_open {
-            self.quick_panel_viewport(&ctx);
+            // Safety net: if every window is OS-hidden or minimized, eframe
+            // cannot create the panel window and egui panics ("the user
+            // callback was never called"). Catch it, restore the root
+            // window, and retry on the next frame.
+            let shown = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.quick_panel_viewport(&ctx);
+            }));
+            match shown {
+                Ok(()) => self.quick_panel_retries = 0,
+                Err(_) if self.quick_panel_retries < 10 => {
+                    self.quick_panel_retries += 1;
+                    log::warn!("Could not create the quick panel window; retrying");
+                    ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Minimized(false));
+                    ctx.request_repaint();
+                }
+                Err(_) => {
+                    log::error!("Giving up on opening the quick panel");
+                    self.quick_open = false;
+                    self.quick_panel_retries = 0;
+                }
+            }
         }
 
         if self.show_settings {
