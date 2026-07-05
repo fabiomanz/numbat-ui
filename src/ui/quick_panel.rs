@@ -18,7 +18,11 @@ pub const PANEL_HEIGHT: f32 = 132.0;
 impl NumbatApp {
     /// Called from the root viewport each frame while the panel is open.
     pub fn quick_panel_viewport(&mut self, ctx: &egui::Context) {
-        self.quick_position = self.quick_panel_position(ctx);
+        // Compute the position once per open — it depends on the mouse
+        // location, and the panel should not follow later mouse movement.
+        if self.quick_just_opened {
+            self.quick_position = self.quick_panel_position(ctx);
+        }
 
         // The window is created invisible and revealed on the first frame,
         // after it has been positioned — otherwise it briefly flashes at a
@@ -46,8 +50,16 @@ impl NumbatApp {
         );
     }
 
-    /// Roughly Spotlight's position: horizontally centered, upper third.
+    /// Roughly Spotlight's position: horizontally centered, upper third —
+    /// on the screen the mouse is on, falling back to the main window's.
     fn quick_panel_position(&self, ctx: &egui::Context) -> Option<egui::Pos2> {
+        #[cfg(target_os = "macos")]
+        if let Some(screen) = crate::platform::screen_rect_under_mouse() {
+            return Some(egui::pos2(
+                screen.left() + (screen.width() - PANEL_WIDTH) / 2.0,
+                screen.top() + screen.height() * 0.22,
+            ));
+        }
         let monitor = ctx.input(|i| i.viewport().monitor_size)?;
         if monitor.x <= 0.0 || monitor.y <= 0.0 {
             return None;
@@ -65,44 +77,60 @@ impl NumbatApp {
 
         // Window-level events.
         if ctx.input(|i| i.viewport().close_requested()) {
-            self.quick_open = false;
+            self.close_quick_panel();
             return;
         }
 
         if self.quick_just_opened {
             self.quick_just_opened = false;
             self.quick_had_focus = false;
-            // Position first, then reveal and focus: the commands are
+            self.quick_focus_nudges = 0;
+            // The window was created hidden (and already at its final
+            // position, via the builder). Configure its Space behavior while
+            // it is still hidden, then reveal and focus: the commands are
             // processed in order after this frame is painted.
-            if let Some(position) = self.quick_position {
-                ctx.send_viewport_cmd(ViewportCommand::OuterPosition(position));
-            }
+            #[cfg(target_os = "macos")]
+            crate::platform::prepare_quick_panel_window("Numbat Quick");
             ctx.send_viewport_cmd(ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(ViewportCommand::Focus);
         }
 
-        // Auto-hide when the panel loses focus (like Spotlight). Only after
-        // it has been focused once, so it doesn't close while appearing.
-        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
-        if focused {
+        // Focus management. `focused` is `None` until the OS reported a
+        // focus state — never treat that as focused, or the panel closes
+        // itself on the first `Some(false)` reading.
+        let focused = ctx.input(|i| i.viewport().focused);
+        if focused == Some(true) {
             self.quick_had_focus = true;
         } else if self.quick_had_focus {
-            self.close_quick_panel(ctx);
-            return;
+            // Auto-hide once focus was gained and is lost (like Spotlight).
+            if focused == Some(false) {
+                self.close_quick_panel();
+                return;
+            }
+        } else if self.quick_focus_nudges < 15 {
+            // Not focused yet: macOS cooperative activation routinely
+            // ignores a background app's first activation request, so keep
+            // nudging for a short while. If it is never granted, the panel
+            // stays open (on top) and a click will focus it.
+            self.quick_focus_nudges += 1;
+            #[cfg(target_os = "macos")]
+            crate::platform::activate_app();
+            ctx.send_viewport_cmd(ViewportCommand::Focus);
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
 
         // Escape: close the completion popup first, then the panel.
         if !self.quick_completion.is_open()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
         {
-            self.close_quick_panel(ctx);
+            self.close_quick_panel();
             return;
         }
 
         // ⌘/Ctrl+⏎: continue in the full window.
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter)) {
             self.open_main_window(ctx);
-            self.close_quick_panel(ctx);
+            self.close_quick_panel();
             return;
         }
 
@@ -170,7 +198,7 @@ impl NumbatApp {
                     {
                         let ctx = ui.ctx().clone();
                         self.open_main_window(&ctx);
-                        self.close_quick_panel(&ctx);
+                        self.close_quick_panel();
                     }
 
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -301,10 +329,5 @@ impl NumbatApp {
         if let Some(text) = text {
             self.copy_to_clipboard(ctx, text);
         }
-    }
-
-    fn close_quick_panel(&mut self, _ctx: &egui::Context) {
-        self.quick_open = false;
-        self.quick_completion.close();
     }
 }

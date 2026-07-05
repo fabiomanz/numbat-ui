@@ -16,8 +16,12 @@ pub struct QuickPanelHotkey {
 
 impl QuickPanelHotkey {
     /// Creates the manager and registers `combo`. Must be called on the main
-    /// thread (macOS requirement). A repaint of `ctx` is requested whenever
-    /// the hotkey fires, so the app wakes up even while hidden.
+    /// thread (macOS requirement). A repaint of the ROOT viewport is
+    /// requested whenever the hotkey fires, so the app wakes up even while
+    /// hidden. (Explicitly ROOT: a plain `request_repaint()` from this
+    /// thread can race into a pass of the quick-panel viewport and target
+    /// it instead — and eframe silently drops repaint requests for viewports
+    /// that no longer exist, losing the hotkey press.)
     pub fn new(combo: &str, ctx: egui::Context) -> Result<Self, String> {
         let manager = GlobalHotKeyManager::new()
             .map_err(|e| format!("Failed to initialize global hotkeys: {e}"))?;
@@ -29,7 +33,7 @@ impl QuickPanelHotkey {
                 while let Ok(event) = GlobalHotKeyEvent::receiver().recv() {
                     if event.state() == HotKeyState::Pressed {
                         pressed.store(true, Ordering::SeqCst);
-                        ctx.request_repaint();
+                        ctx.request_repaint_of(egui::ViewportId::ROOT);
                     }
                 }
             });

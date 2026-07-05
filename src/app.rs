@@ -30,6 +30,9 @@ pub struct NumbatApp {
     pub quick_open: bool,
     pub quick_just_opened: bool,
     pub quick_had_focus: bool,
+    /// Activation/focus retries after opening the quick panel; macOS
+    /// cooperative activation often ignores a background app's first request.
+    pub quick_focus_nudges: u8,
     /// Where the quick panel should appear (computed from the monitor size).
     pub quick_position: Option<egui::Pos2>,
     pub show_settings: bool,
@@ -127,6 +130,7 @@ impl NumbatApp {
             quick_open: false,
             quick_just_opened: false,
             quick_had_focus: false,
+            quick_focus_nudges: 0,
             quick_position: None,
             show_settings: false,
             quitting: false,
@@ -275,9 +279,23 @@ impl NumbatApp {
     }
 
     pub fn toggle_quick_panel(&mut self) {
-        self.quick_open = !self.quick_open;
         if self.quick_open {
+            self.close_quick_panel();
+        } else {
+            self.quick_open = true;
             self.quick_just_opened = true;
+        }
+    }
+
+    pub(crate) fn close_quick_panel(&mut self) {
+        self.quick_open = false;
+        self.quick_completion.close();
+        // If the panel held focus and no other window of ours is visible,
+        // hand activation back to the previous app — otherwise this app
+        // would stay active with no window to receive keystrokes.
+        #[cfg(target_os = "macos")]
+        if self.quick_had_focus && !self.main_visible && !self.show_settings {
+            crate::platform::deactivate_app();
         }
     }
 
@@ -378,6 +396,13 @@ impl eframe::App for NumbatApp {
         // The global hotkey fired (possibly while every window was hidden).
         if self.hotkey.as_ref().is_some_and(|h| h.take_pressed()) {
             self.toggle_quick_panel();
+            // Request activation while the press is fresh: macOS is far more
+            // willing to activate a background app right after the user
+            // interaction that asked for it.
+            #[cfg(target_os = "macos")]
+            if self.quick_open {
+                crate::platform::activate_app();
+            }
         }
 
         // The app was re-opened (Finder, Spotlight, Dock) while running

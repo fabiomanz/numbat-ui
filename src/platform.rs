@@ -52,6 +52,80 @@ mod macos {
         }
     }
 
+    /// Asks macOS to bring the app to the foreground so the quick panel can
+    /// take keyboard focus. Under cooperative activation (macOS 14+) a
+    /// single request from a background app is often ignored — the panel
+    /// therefore keeps re-requesting for a short while after opening.
+    // `ActivateIgnoringOtherApps` is a no-op on macOS 14+, but still helps on 13.
+    #[allow(deprecated)]
+    pub fn activate_app() {
+        use objc2_app_kit::{NSApplication, NSApplicationActivationOptions, NSRunningApplication};
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return;
+        };
+        NSRunningApplication::currentApplication()
+            .activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
+        NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+    }
+
+    /// Hands activation back to the previously active app. Used when the
+    /// quick panel closes while no other window of ours is visible; without
+    /// this the now-windowless app would keep swallowing keystrokes.
+    pub fn deactivate_app() {
+        use objc2_app_kit::NSApplication;
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return;
+        };
+        NSApplication::sharedApplication(mtm).deactivate();
+    }
+
+    /// Marks the quick-panel window as joining every Space — including
+    /// fullscreen ones — so it appears on whatever Space is active, like
+    /// Spotlight, instead of opening on the Space the app's other windows
+    /// live on (or not being visible at all over a fullscreen app). Must run
+    /// after eframe created the (still hidden) window, i.e. on the panel's
+    /// first frame.
+    pub fn prepare_quick_panel_window(title: &str) {
+        use objc2_app_kit::{NSApplication, NSWindowCollectionBehavior};
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return;
+        };
+        for window in NSApplication::sharedApplication(mtm).windows().iter() {
+            if window.title().to_string() == title {
+                window.setCollectionBehavior(
+                    NSWindowCollectionBehavior::CanJoinAllSpaces
+                        | NSWindowCollectionBehavior::FullScreenAuxiliary,
+                );
+            }
+        }
+    }
+
+    /// The frame of the screen the mouse cursor is on, in points with a
+    /// top-left origin (winit's coordinate space). The quick panel opens
+    /// there — like Spotlight — rather than on the main window's screen.
+    pub fn screen_rect_under_mouse() -> Option<egui::Rect> {
+        use objc2_app_kit::{NSEvent, NSScreen};
+        let mtm = objc2::MainThreadMarker::new()?;
+        let mouse = NSEvent::mouseLocation();
+        let screens = NSScreen::screens(mtm);
+        // Cocoa coordinates have a bottom-left origin (y grows upward),
+        // anchored to the primary screen — the first one in the list.
+        let primary_height = screens.iter().next()?.frame().size.height;
+        for screen in screens.iter() {
+            let frame = screen.frame();
+            let (x, y) = (frame.origin.x, frame.origin.y);
+            let (w, h) = (frame.size.width, frame.size.height);
+            if mouse.x >= x && mouse.x < x + w && mouse.y >= y && mouse.y < y + h {
+                let top = primary_height - (y + h);
+                return Some(egui::Rect::from_min_size(
+                    egui::pos2(x as f32, top as f32),
+                    egui::vec2(w as f32, h as f32),
+                ));
+            }
+        }
+        None
+    }
+
     /// Calls `on_activate` (on the main thread) whenever the app becomes
     /// active — e.g. it is re-opened through the Finder, Spotlight or the
     /// Dock while already running in the background.
