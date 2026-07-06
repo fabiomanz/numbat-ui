@@ -32,6 +32,7 @@ impl QuickPanelHotkey {
             std::thread::spawn(move || {
                 while let Ok(event) = GlobalHotKeyEvent::receiver().recv() {
                     if event.state() == HotKeyState::Pressed {
+                        log::debug!("Global hotkey pressed; requesting repaint");
                         pressed.store(true, Ordering::SeqCst);
                         ctx.request_repaint_of(egui::ViewportId::ROOT);
                     }

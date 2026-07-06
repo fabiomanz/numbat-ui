@@ -369,6 +369,43 @@ impl NumbatApp {
             self.quit(ctx);
         }
     }
+
+    /// Shows the quick panel and settings viewports. Called from `logic`
+    /// rather than `ui` so both keep working while eframe considers the
+    /// root viewport invisible (fully occluded or hidden); the debug
+    /// screenshot harness calls it from `ui` instead when viewports are
+    /// embedded into the root window.
+    fn show_child_viewports(&mut self, ctx: &egui::Context) {
+        if self.quick_open {
+            // Safety net: if every window is OS-hidden or minimized, eframe
+            // cannot create the panel window and egui panics ("the user
+            // callback was never called"). Catch it, restore the root
+            // window, and retry on the next frame.
+            let shown = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.quick_panel_viewport(ctx);
+            }));
+            match shown {
+                Ok(()) => self.quick_panel_retries = 0,
+                Err(_) if self.quick_panel_retries < 10 => {
+                    self.quick_panel_retries += 1;
+                    log::warn!("Could not create the quick panel window; retrying");
+                    #[cfg(target_os = "macos")]
+                    crate::platform::unhide_app();
+                    ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Minimized(false));
+                    ctx.request_repaint();
+                }
+                Err(_) => {
+                    log::error!("Giving up on opening the quick panel");
+                    self.quick_open = false;
+                    self.quick_panel_retries = 0;
+                }
+            }
+        }
+
+        if self.show_settings {
+            self.settings_viewport(ctx);
+        }
+    }
 }
 
 impl eframe::App for NumbatApp {
@@ -385,25 +422,43 @@ impl eframe::App for NumbatApp {
         [0.0, 0.0, 0.0, 0.0]
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let ctx = ui.ctx().clone();
+    /// Runs every frame, even while eframe considers the root viewport
+    /// invisible — `ui` does not. The imperceptible background window is
+    /// routinely fully occluded (covered by other windows, app hidden via
+    /// Cmd+H or "Hide Others"), and eframe skips `ui` in that state; with
+    /// the hotkey handled in `ui`, the app went permanently deaf to the
+    /// hotkey once that happened. No painting is allowed in here — child
+    /// viewports are separate passes and are fine.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.sync_theme(ctx);
 
-        self.sync_theme(&ctx);
-
-        #[cfg(debug_assertions)]
-        self.debug_screenshot_harness(&ctx);
-
-        // The global hotkey fired (possibly while every window was hidden).
+        // The global hotkey fired (possibly while every window was hidden
+        // or occluded).
         if self.hotkey.as_ref().is_some_and(|h| h.take_pressed()) {
             self.toggle_quick_panel();
-            // Request activation while the press is fresh: macOS is far more
-            // willing to activate a background app right after the user
-            // interaction that asked for it.
+            log::debug!("Hotkey press consumed; quick_open={}", self.quick_open);
             #[cfg(target_os = "macos")]
             if self.quick_open {
+                // A hidden app's windows are all ordered out and eframe
+                // could then never create the panel window.
+                crate::platform::unhide_app();
+                // Request activation while the press is fresh: macOS is far
+                // more willing to activate a background app right after the
+                // user interaction that asked for it.
                 crate::platform::activate_app();
             }
         }
+
+        if !ctx.embed_viewports() {
+            self.show_child_viewports(ctx);
+        }
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+
+        #[cfg(debug_assertions)]
+        self.debug_screenshot_harness(&ctx);
 
         // The app was re-opened (Finder, Spotlight, Dock) while running
         // hidden in the background: bring the main window back. The startup
@@ -433,32 +488,10 @@ impl eframe::App for NumbatApp {
             self.main_window_ui(ui);
         }
 
-        if self.quick_open {
-            // Safety net: if every window is OS-hidden or minimized, eframe
-            // cannot create the panel window and egui panics ("the user
-            // callback was never called"). Catch it, restore the root
-            // window, and retry on the next frame.
-            let shown = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.quick_panel_viewport(&ctx);
-            }));
-            match shown {
-                Ok(()) => self.quick_panel_retries = 0,
-                Err(_) if self.quick_panel_retries < 10 => {
-                    self.quick_panel_retries += 1;
-                    log::warn!("Could not create the quick panel window; retrying");
-                    ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Minimized(false));
-                    ctx.request_repaint();
-                }
-                Err(_) => {
-                    log::error!("Giving up on opening the quick panel");
-                    self.quick_open = false;
-                    self.quick_panel_retries = 0;
-                }
-            }
-        }
-
-        if self.show_settings {
-            self.settings_viewport(&ctx);
+        // Embedded viewports (debug screenshot harness) paint into the root
+        // window, so they must be laid out here rather than in `logic`.
+        if ctx.embed_viewports() {
+            self.show_child_viewports(&ctx);
         }
     }
 }

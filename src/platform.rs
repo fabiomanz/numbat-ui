@@ -79,6 +79,21 @@ mod macos {
         NSApplication::sharedApplication(mtm).deactivate();
     }
 
+    /// Unhides the app if it was hidden (Cmd+H, another app's "Hide
+    /// Others", …). A hidden app's windows are all ordered out, and eframe
+    /// paints ordered-out windows without an event-loop context — in that
+    /// state the quick panel window can never be created.
+    pub fn unhide_app() {
+        use objc2_app_kit::NSApplication;
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return;
+        };
+        let app = NSApplication::sharedApplication(mtm);
+        if app.isHidden() {
+            app.unhide(None);
+        }
+    }
+
     /// Marks the quick-panel window as joining every Space — including
     /// fullscreen ones — so it appears on whatever Space is active, like
     /// Spotlight, instead of opening on the Space the app's other windows
