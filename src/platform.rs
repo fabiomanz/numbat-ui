@@ -52,6 +52,15 @@ mod macos {
         }
     }
 
+    /// Whether this app is the active (frontmost) application.
+    pub fn is_app_active() -> bool {
+        use objc2_app_kit::NSApplication;
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return false;
+        };
+        NSApplication::sharedApplication(mtm).isActive()
+    }
+
     /// Asks macOS to bring the app to the foreground so the quick panel can
     /// take keyboard focus. Under cooperative activation (macOS 14+) a
     /// single request from a background app is often ignored — the panel
@@ -163,6 +172,60 @@ mod macos {
         }
     }
 
+    struct ReopenIvars {
+        callback: Box<dyn Fn()>,
+    }
+
+    objc2::define_class!(
+        #[unsafe(super(objc2::runtime::NSObject))]
+        #[name = "NumbatReopenHandler"]
+        #[ivars = ReopenIvars]
+        struct ReopenHandler;
+
+        impl ReopenHandler {
+            #[unsafe(method(handleReopenEvent:withReplyEvent:))]
+            fn handle_reopen(
+                &self,
+                _event: &objc2_foundation::NSAppleEventDescriptor,
+                _reply: &objc2_foundation::NSAppleEventDescriptor,
+            ) {
+                use objc2::DefinedClass;
+                (self.ivars().callback)();
+            }
+        }
+    );
+
+    /// Calls `on_reopen` whenever the app receives the "reopen" Apple event
+    /// — the user clicked the Dock tile or launched the app again while it
+    /// was already running. Unlike `observe_app_activation` this also fires
+    /// while the app is already active, which it routinely still is after
+    /// the quick panel closed (`deactivate` is unreliable under cooperative
+    /// activation).
+    pub fn observe_app_reopen(on_reopen: impl Fn() + 'static) {
+        use objc2::rc::Retained;
+        use objc2::{msg_send, sel, AnyThread};
+        use objc2_foundation::NSAppleEventManager;
+
+        let handler = ReopenHandler::alloc().set_ivars(ReopenIvars {
+            callback: Box::new(on_reopen),
+        });
+        let handler: Retained<ReopenHandler> = unsafe { msg_send![super(handler), init] };
+
+        const CORE_EVENT_CLASS: u32 = u32::from_be_bytes(*b"aevt"); // kCoreEventClass
+        const REOPEN_APPLICATION: u32 = u32::from_be_bytes(*b"rapp"); // kAEReopenApplication
+        unsafe {
+            NSAppleEventManager::sharedAppleEventManager()
+                .setEventHandler_andSelector_forEventClass_andEventID(
+                    &handler,
+                    sel!(handleReopenEvent:withReplyEvent:),
+                    CORE_EVENT_CLASS,
+                    REOPEN_APPLICATION,
+                );
+        }
+        // The handler lives for the whole app lifetime.
+        std::mem::forget(handler);
+    }
+
     /// Actions triggered from the native menu bar.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum MenuAction {
@@ -257,6 +320,15 @@ mod macos {
                 quit_id: quit_item.id().clone(),
                 _menu: menu,
             }
+        }
+
+        /// Re-installs the menu as NSApp's main menu. After returning from
+        /// the Accessory activation policy, macOS sometimes keeps showing
+        /// the previous app's menu bar; re-setting the main menu makes it
+        /// pick ours up again.
+        pub fn reinstall(&self) {
+            self._menu.remove_for_nsapp();
+            self._menu.init_for_nsapp();
         }
 
         /// Drains pending native menu events.

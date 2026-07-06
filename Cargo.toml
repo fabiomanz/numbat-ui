@@ -25,7 +25,7 @@ muda = "0.17"
 objc2 = "0.6"
 block2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSResponder", "NSRunningApplication", "NSImage", "NSWindow", "NSScreen", "NSEvent", "NSGraphics"] }
-objc2-foundation = { version = "0.3", features = ["NSData", "NSNotification", "NSOperation", "NSArray", "NSString", "NSEnumerator", "NSGeometry", "block2"] }
+objc2-foundation = { version = "0.3", features = ["NSData", "NSNotification", "NSOperation", "NSArray", "NSString", "NSEnumerator", "NSGeometry", "NSAppleEventManager", "NSAppleEventDescriptor", "objc2-core-services", "block2"] }
 
 [dev-dependencies]
 serde_json = "1.0.149"

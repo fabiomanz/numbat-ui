@@ -11,6 +11,21 @@ use crate::session::Session;
 use crate::theme::{self, Palette};
 use crate::ui::{CompletionState, Toasts};
 
+/// The switch back to the Regular activation policy (Dock icon + menu
+/// bar) after the hidden main window was reopened. Switching in the same
+/// runloop pass that (re)activated the app leaves the menu bar showing
+/// the previous app's menus — macOS only rebuilds it when the policy
+/// changes on an app whose activation has settled. So the switch waits
+/// until the app has been active for a moment, and re-claims activation
+/// afterwards (the policy change can drop it).
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+enum RegularPolicySwitch {
+    Idle,
+    WaitSettle { since: std::time::Instant },
+    Reactivate { since: std::time::Instant },
+}
+
 pub struct NumbatApp {
     pub config: AppConfig,
     pub palette: Palette,
@@ -33,6 +48,8 @@ pub struct NumbatApp {
     /// Activation/focus retries after opening the quick panel; macOS
     /// cooperative activation often ignores a background app's first request.
     pub quick_focus_nudges: u8,
+    #[cfg(target_os = "macos")]
+    regular_policy_switch: RegularPolicySwitch,
     /// Where the quick panel should appear (computed from the monitor size).
     pub quick_position: Option<egui::Pos2>,
     pub show_settings: bool,
@@ -89,18 +106,26 @@ impl NumbatApp {
         }
 
         // Re-opening the app (Finder, Spotlight, Dock) while it runs hidden
-        // in the background only *activates* the existing instance; watch for
-        // that so the main window can be brought back.
+        // in the background only *activates* the existing instance — and if
+        // it silently stayed active (macOS often ignores `deactivate`), only
+        // a "reopen" Apple event arrives. Watch for both so the main window
+        // can be brought back.
         #[cfg(target_os = "macos")]
         let reactivated = {
             use std::sync::atomic::{AtomicBool, Ordering};
             let flag = std::sync::Arc::new(AtomicBool::new(false));
-            let observer_flag = std::sync::Arc::clone(&flag);
-            let ctx = cc.egui_ctx.clone();
-            crate::platform::observe_app_activation(move || {
-                observer_flag.store(true, Ordering::SeqCst);
-                ctx.request_repaint();
-            });
+            let raise = {
+                let flag = std::sync::Arc::clone(&flag);
+                let ctx = cc.egui_ctx.clone();
+                std::sync::Arc::new(move || {
+                    log::debug!("App activation/reopen; reactivated flag set");
+                    flag.store(true, Ordering::SeqCst);
+                    ctx.request_repaint();
+                })
+            };
+            let on_activate = std::sync::Arc::clone(&raise);
+            crate::platform::observe_app_activation(move || on_activate());
+            crate::platform::observe_app_reopen(move || raise());
             flag
         };
 
@@ -131,6 +156,8 @@ impl NumbatApp {
             quick_just_opened: false,
             quick_had_focus: false,
             quick_focus_nudges: 0,
+            #[cfg(target_os = "macos")]
+            regular_policy_switch: RegularPolicySwitch::Idle,
             quick_position: None,
             show_settings: false,
             quitting: false,
@@ -252,9 +279,20 @@ impl NumbatApp {
     }
 
     pub fn open_main_window(&mut self, ctx: &egui::Context) {
-        self.main_visible = true;
         #[cfg(target_os = "macos")]
-        crate::platform::set_dock_visible(true);
+        if self.main_visible {
+            crate::platform::set_dock_visible(true);
+        } else {
+            // The window was hidden, so the app runs under the Accessory
+            // policy. Switching back to Regular is deferred until the
+            // activation triggered by this reopen has settled — see
+            // `RegularPolicySwitch`. The window itself shows right away.
+            self.regular_policy_switch = RegularPolicySwitch::WaitSettle {
+                since: std::time::Instant::now(),
+            };
+            ctx.request_repaint();
+        }
+        self.main_visible = true;
         ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Decorations(true));
         ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::MousePassthrough(false));
         ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Visible(true));
@@ -290,6 +328,13 @@ impl NumbatApp {
     pub(crate) fn close_quick_panel(&mut self) {
         self.quick_open = false;
         self.quick_completion.close();
+        // Activating the app for the panel raised the `reactivated` flag,
+        // and `ui` could not consume it while the root window was occluded
+        // by the panel — discard it, or the main window pops up after the
+        // panel closes.
+        #[cfg(target_os = "macos")]
+        self.reactivated
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         // If the panel held focus and no other window of ours is visible,
         // hand activation back to the previous app — otherwise this app
         // would stay active with no window to receive keystrokes.
@@ -449,6 +494,86 @@ impl eframe::App for NumbatApp {
             }
         }
 
+        // The app was re-opened (Finder, Spotlight, Dock) while running
+        // hidden in the background: bring the main window back. Handled
+        // here rather than in `ui` because `ui` is skipped while the root
+        // window is occluded — which the imperceptible hidden window
+        // routinely is. Activations caused by the quick panel itself are
+        // discarded by the `quick_open` check (the flag is consumed either
+        // way). The startup grace period keeps a `--hidden` login launch
+        // in the background.
+        #[cfg(target_os = "macos")]
+        if self
+            .reactivated
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            log::debug!(
+                "Reactivated: main_visible={} quick_open={} show_settings={} elapsed={}s",
+                self.main_visible,
+                self.quick_open,
+                self.show_settings,
+                self.started_at.elapsed().as_secs()
+            );
+            if !self.main_visible
+                && !self.quick_open
+                && !self.show_settings
+                && self.started_at.elapsed().as_secs() >= 2
+            {
+                log::debug!("Opening main window after reactivation");
+                self.open_main_window(ctx);
+            }
+        }
+
+        // Complete a deferred Accessory→Regular policy switch (Dock icon,
+        // menu bar): switch once the app has been active for a moment
+        // (switching too early leaves a stale menu bar; if activation is
+        // never granted, switch anyway on timeout), then re-claim
+        // activation, which the policy change tends to drop.
+        #[cfg(target_os = "macos")]
+        {
+            use crate::platform::{activate_app, is_app_active};
+            use std::time::{Duration, Instant};
+            const FRAME: Duration = Duration::from_millis(50);
+            self.regular_policy_switch = match self.regular_policy_switch {
+                RegularPolicySwitch::Idle => RegularPolicySwitch::Idle,
+                _ if !self.main_visible => RegularPolicySwitch::Idle,
+                RegularPolicySwitch::WaitSettle { since } => {
+                    let elapsed = since.elapsed();
+                    if (is_app_active() && elapsed >= Duration::from_millis(300))
+                        || elapsed >= Duration::from_millis(1500)
+                    {
+                        log::debug!("Switching to the Regular activation policy");
+                        crate::platform::set_dock_visible(true);
+                        ctx.request_repaint_after(FRAME);
+                        RegularPolicySwitch::Reactivate {
+                            since: Instant::now(),
+                        }
+                    } else {
+                        if !is_app_active() {
+                            activate_app();
+                            ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Focus);
+                        }
+                        ctx.request_repaint_after(FRAME);
+                        RegularPolicySwitch::WaitSettle { since }
+                    }
+                }
+                RegularPolicySwitch::Reactivate { since } => {
+                    if is_app_active() || since.elapsed() >= Duration::from_millis(1000) {
+                        // Belt and braces: macOS sometimes keeps showing the
+                        // previous app's menu bar after the policy switch
+                        // even though this app is active.
+                        self.menu.reinstall();
+                        RegularPolicySwitch::Idle
+                    } else {
+                        activate_app();
+                        ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Focus);
+                        ctx.request_repaint_after(FRAME);
+                        RegularPolicySwitch::Reactivate { since }
+                    }
+                }
+            };
+        }
+
         if !ctx.embed_viewports() {
             self.show_child_viewports(ctx);
         }
@@ -459,21 +584,6 @@ impl eframe::App for NumbatApp {
 
         #[cfg(debug_assertions)]
         self.debug_screenshot_harness(&ctx);
-
-        // The app was re-opened (Finder, Spotlight, Dock) while running
-        // hidden in the background: bring the main window back. The startup
-        // grace period keeps a `--hidden` login launch in the background.
-        #[cfg(target_os = "macos")]
-        if self
-            .reactivated
-            .swap(false, std::sync::atomic::Ordering::SeqCst)
-            && !self.main_visible
-            && !self.quick_open
-            && !self.show_settings
-            && self.started_at.elapsed().as_secs() >= 2
-        {
-            self.open_main_window(&ctx);
-        }
 
         // Closing the main window hides it; the app keeps running so the
         // quick panel remains summonable. Quitting goes through `quit()`.
