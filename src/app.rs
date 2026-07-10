@@ -69,6 +69,10 @@ pub struct NumbatApp {
     last_dead_key: Option<String>,
     #[cfg(target_os = "macos")]
     menu: crate::platform::MacMenu,
+    /// An Edit-menu action waiting to be injected into the focused
+    /// viewport's input — see `apply_edit_action`.
+    #[cfg(target_os = "macos")]
+    pending_edit: Option<crate::platform::EditAction>,
     /// Set (from a notification observer) when the app becomes active, so a
     /// re-open from the Finder/Spotlight/Dock can bring the window back.
     #[cfg(target_os = "macos")]
@@ -169,6 +173,8 @@ impl NumbatApp {
             last_dead_key: None,
             #[cfg(target_os = "macos")]
             menu: crate::platform::MacMenu::install(),
+            #[cfg(target_os = "macos")]
+            pending_edit: None,
             #[cfg(target_os = "macos")]
             reactivated,
             #[cfg(target_os = "macos")]
@@ -362,9 +368,14 @@ impl NumbatApp {
         self.session = session;
     }
 
-    fn handle_menu_and_shortcuts(&mut self, ctx: &egui::Context) {
-        // Native macOS menu events.
-        #[cfg(target_os = "macos")]
+    /// Drains native macOS menu events. Runs from `logic` rather than `ui`
+    /// so the menu keeps working while eframe considers the root viewport
+    /// invisible (fully occluded or hidden) — e.g. shortcuts pressed in the
+    /// quick panel while the main window is hidden. Edit actions are
+    /// stashed and picked up by whichever viewport has keyboard focus.
+    #[cfg(target_os = "macos")]
+    fn poll_menu(&mut self, ctx: &egui::Context) {
+        self.pending_edit = None;
         while let Some(action) = self.menu.poll() {
             use crate::platform::MenuAction;
             match action {
@@ -372,8 +383,54 @@ impl NumbatApp {
                 MenuAction::ShowMainWindow => self.open_main_window(ctx),
                 MenuAction::ClearHistory => self.session.clear(),
                 MenuAction::Quit => self.quit(ctx),
+                MenuAction::Edit(action) => self.pending_edit = Some(action),
             }
         }
+    }
+
+    /// Injects the egui events for a pending Edit-menu action into the
+    /// current pass's input. The native menu swallows the ⌘Z/X/C/V/A key
+    /// equivalents before the window ever sees a key event, so the menu
+    /// event is the only signal that the shortcut was pressed. Every
+    /// viewport calls this at the top of its UI (before any text field is
+    /// laid out); the one holding keyboard focus consumes the action.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn apply_edit_action(&mut self, ctx: &egui::Context) {
+        use crate::platform::EditAction;
+        if self.pending_edit.is_none() || ctx.input(|i| i.viewport().focused) != Some(true) {
+            return;
+        }
+        let Some(action) = self.pending_edit.take() else {
+            return;
+        };
+        let key_event = |key, modifiers| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        };
+        let event = match action {
+            EditAction::Undo => key_event(egui::Key::Z, egui::Modifiers::COMMAND),
+            EditAction::Redo => key_event(
+                egui::Key::Z,
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            ),
+            EditAction::Cut => egui::Event::Cut,
+            EditAction::Copy => egui::Event::Copy,
+            EditAction::SelectAll => key_event(egui::Key::A, egui::Modifiers::COMMAND),
+            EditAction::Paste => match crate::platform::pasteboard_string() {
+                Some(text) if !text.is_empty() => egui::Event::Paste(text.replace("\r\n", "\n")),
+                _ => return,
+            },
+        };
+        ctx.input_mut(|i| i.events.push(event));
+    }
+
+    fn handle_menu_and_shortcuts(&mut self, ctx: &egui::Context) {
+        // A pending Edit-menu action targeting the main window.
+        #[cfg(target_os = "macos")]
+        self.apply_edit_action(ctx);
 
         // Global (in-app) shortcuts for the main viewport.
         let mut clear = false;
@@ -476,6 +533,12 @@ impl eframe::App for NumbatApp {
     /// viewports are separate passes and are fine.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.sync_theme(ctx);
+
+        // Native menu events — drained before the child viewports are
+        // shown, so a stashed Edit action reaches the quick panel or the
+        // settings window in this same frame.
+        #[cfg(target_os = "macos")]
+        self.poll_menu(ctx);
 
         // The global hotkey fired (possibly while every window was hidden
         // or occluded).

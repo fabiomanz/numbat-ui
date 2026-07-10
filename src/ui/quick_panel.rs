@@ -81,6 +81,10 @@ impl NumbatApp {
             return;
         }
 
+        // A pending Edit-menu action (⌘Z/X/C/V/A) targeting this panel.
+        #[cfg(target_os = "macos")]
+        self.apply_edit_action(ctx);
+
         if self.quick_just_opened {
             self.quick_just_opened = false;
             self.quick_had_focus = false;
@@ -134,9 +138,21 @@ impl NumbatApp {
             return;
         }
 
-        // ⌘/Ctrl+C without a text selection: copy the current result.
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::C)) {
-            self.quick_copy_result(ctx);
+        // ⌘/Ctrl+C without a text selection: copy the current result. The
+        // shortcut arrives as an `Event::Copy`, never as a key event; with
+        // a selection it is left for the input field to handle.
+        let has_selection = egui::text_edit::TextEditState::load(ctx, egui::Id::new("quick_input"))
+            .and_then(|state| state.cursor.char_range())
+            .is_some_and(|range| !range.is_empty());
+        if !has_selection {
+            let copy_requested = ctx.input_mut(|i| {
+                let before = i.events.len();
+                i.events.retain(|e| !matches!(e, egui::Event::Copy));
+                i.events.len() != before
+            });
+            if copy_requested {
+                self.quick_copy_result(ctx);
+            }
         }
 
         egui::CentralPanel::default()

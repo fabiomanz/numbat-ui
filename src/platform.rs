@@ -226,6 +226,16 @@ mod macos {
         std::mem::forget(handler);
     }
 
+    /// The current text on the general pasteboard, if any. Needed for the
+    /// Edit ▸ Paste menu action — egui can only paste text handed to it
+    /// as an event.
+    pub fn pasteboard_string() -> Option<String> {
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+        let pasteboard = NSPasteboard::generalPasteboard();
+        let string = unsafe { pasteboard.stringForType(NSPasteboardTypeString) }?;
+        Some(string.to_string())
+    }
+
     /// Actions triggered from the native menu bar.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum MenuAction {
@@ -233,6 +243,22 @@ mod macos {
         ShowMainWindow,
         ClearHistory,
         Quit,
+        Edit(EditAction),
+    }
+
+    /// The standard Edit-menu actions. These must be custom menu items:
+    /// the predefined ones fire AppKit selectors (`selectAll:`, `copy:`, …)
+    /// that winit's view does not implement — and because the menu swallows
+    /// their ⌘-key equivalents before the window sees a key event, both the
+    /// items and the shortcuts would silently do nothing.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum EditAction {
+        Undo,
+        Redo,
+        Cut,
+        Copy,
+        Paste,
+        SelectAll,
     }
 
     pub struct MacMenu {
@@ -241,6 +267,7 @@ mod macos {
         show_main_id: MenuId,
         clear_id: MenuId,
         quit_id: MenuId,
+        edit_ids: Vec<(MenuId, EditAction)>,
     }
 
     impl MacMenu {
@@ -279,14 +306,28 @@ mod macos {
             ]);
 
             let edit_menu = Submenu::new("Edit", true);
+            let mut edit_ids = Vec::new();
+            let mut edit_item = |title: &str, mods: Modifiers, code: Code, action: EditAction| {
+                let item = MenuItem::new(title, true, Some(Accelerator::new(Some(mods), code)));
+                edit_ids.push((item.id().clone(), action));
+                item
+            };
+            let shift_super = Modifiers::SUPER | Modifiers::SHIFT;
+            let undo = edit_item("Undo", Modifiers::SUPER, Code::KeyZ, EditAction::Undo);
+            let redo = edit_item("Redo", shift_super, Code::KeyZ, EditAction::Redo);
+            let cut = edit_item("Cut", Modifiers::SUPER, Code::KeyX, EditAction::Cut);
+            let copy = edit_item("Copy", Modifiers::SUPER, Code::KeyC, EditAction::Copy);
+            let paste = edit_item("Paste", Modifiers::SUPER, Code::KeyV, EditAction::Paste);
+            let select_all =
+                edit_item("Select All", Modifiers::SUPER, Code::KeyA, EditAction::SelectAll);
             let _ = edit_menu.append_items(&[
-                &PredefinedMenuItem::undo(None),
-                &PredefinedMenuItem::redo(None),
+                &undo,
+                &redo,
                 &PredefinedMenuItem::separator(),
-                &PredefinedMenuItem::cut(None),
-                &PredefinedMenuItem::copy(None),
-                &PredefinedMenuItem::paste(None),
-                &PredefinedMenuItem::select_all(None),
+                &cut,
+                &copy,
+                &paste,
+                &select_all,
             ]);
 
             let history_menu = Submenu::new("History", true);
@@ -318,6 +359,7 @@ mod macos {
                 show_main_id: show_main_item.id().clone(),
                 clear_id: clear_item.id().clone(),
                 quit_id: quit_item.id().clone(),
+                edit_ids,
                 _menu: menu,
             }
         }
@@ -342,6 +384,10 @@ mod macos {
                 Some(MenuAction::ClearHistory)
             } else if event.id == self.quit_id {
                 Some(MenuAction::Quit)
+            } else if let Some((_, action)) =
+                self.edit_ids.iter().find(|(id, _)| *id == event.id)
+            {
+                Some(MenuAction::Edit(*action))
             } else {
                 None
             }

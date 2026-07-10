@@ -37,6 +37,9 @@ impl NumbatApp {
                     self.show_settings = false;
                     return;
                 }
+                // A pending Edit-menu action (⌘Z/X/C/V/A) for this window.
+                #[cfg(target_os = "macos")]
+                self.apply_edit_action(ui.ctx());
                 egui::CentralPanel::default().show_inside(ui, |ui| {
                     self.settings_ui(ui);
                 });
