@@ -3,6 +3,7 @@
 //! shared with the main window, so anything typed or evaluated here can be
 //! picked up seamlessly in the full window ("Open in window", ⌘/Ctrl+⏎).
 
+use egui::text::{CCursor, CCursorRange};
 use egui::{
     Color32, CornerRadius, Frame, Margin, RichText, Stroke, ViewportBuilder, ViewportCommand,
     ViewportId,
@@ -14,6 +15,10 @@ use crate::ui::InputField;
 
 pub const PANEL_WIDTH: f32 = 680.0;
 pub const PANEL_HEIGHT: f32 = 132.0;
+
+fn input_id() -> egui::Id {
+    egui::Id::new("quick_input")
+}
 
 impl NumbatApp {
     /// Called from the root viewport each frame while the panel is open.
@@ -89,6 +94,12 @@ impl NumbatApp {
             self.quick_just_opened = false;
             self.quick_had_focus = false;
             self.quick_focus_nudges = 0;
+            // Spotlight-style: the input is kept across closes (the session
+            // is shared with the main window, so dropping it would discard a
+            // draft there), but it comes up fully selected — the next
+            // keystroke replaces it, while it stays readable and copyable.
+            self.quick_select_all = true;
+            self.quick_auto_selection = false;
             // The window was created hidden (and already at its final
             // position, via the builder). Configure its Space behavior while
             // it is still hidden, then reveal and focus: the commands are
@@ -123,12 +134,21 @@ impl NumbatApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
 
-        // Escape: close the completion popup first, then the panel.
+        // Escape, in order: close the completion popup (handled by the input
+        // field itself), clear a non-empty input, close the panel. Clearing
+        // first means a stale expression is one keypress away from gone
+        // without losing the panel — the last evaluated result stays visible.
         if !self.quick_completion.is_open()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
         {
-            self.close_quick_panel();
-            return;
+            // Trimmed, to match the `input_empty` the key hint is drawn from.
+            if self.session.input.trim().is_empty() {
+                self.close_quick_panel();
+                return;
+            }
+            self.session.input.clear();
+            self.session.on_input_edited();
+            self.quick_select_all = false;
         }
 
         // ⌘/Ctrl+⏎: continue in the full window.
@@ -141,9 +161,20 @@ impl NumbatApp {
         // ⌘/Ctrl+C without a text selection: copy the current result. The
         // shortcut arrives as an `Event::Copy`, never as a key event; with
         // a selection it is left for the input field to handle.
-        let has_selection = egui::text_edit::TextEditState::load(ctx, egui::Id::new("quick_input"))
+        let selection = egui::text_edit::TextEditState::load(ctx, input_id())
             .and_then(|state| state.cursor.char_range())
-            .is_some_and(|range| !range.is_empty());
+            .map(|range| range.as_sorted_char_range());
+        // The selection made on open (`apply_quick_select_all`) is not one
+        // the user asked for, so ⌘C keeps copying the result until they
+        // touch the input. Once the selection is no longer the full text the
+        // latch drops for good, so a later ⌘A ⌘C copies the input as usual.
+        if self.quick_auto_selection
+            && selection.as_ref() != Some(&(0..self.session.input.chars().count()))
+        {
+            self.quick_auto_selection = false;
+        }
+        let has_selection =
+            selection.is_some_and(|range| !range.is_empty()) && !self.quick_auto_selection;
         if !has_selection {
             let copy_requested = ctx.input_mut(|i| {
                 let before = i.events.len();
@@ -182,9 +213,41 @@ impl NumbatApp {
         self.toasts.ui(ctx, &palette, "quick");
     }
 
+    /// Selects the whole retained input after an open, Spotlight-style. The
+    /// field only gains focus a frame or two later (macOS routinely denies a
+    /// background app's first activation request), so this keeps applying
+    /// until it does — but a click in that window cancels it, leaving the
+    /// caret where the user put it.
+    fn apply_quick_select_all(&mut self, ctx: &egui::Context) {
+        if !self.quick_select_all {
+            return;
+        }
+        let len = self.session.input.chars().count();
+        if len == 0 || ctx.input(|i| i.pointer.any_pressed()) {
+            self.quick_select_all = false;
+            return;
+        }
+
+        let id = input_id();
+        let mut state = egui::text_edit::TextEditState::load(ctx, id).unwrap_or_default();
+        state
+            .cursor
+            .set_char_range(Some(CCursorRange::two(CCursor::new(0), CCursor::new(len))));
+        state.store(ctx, id);
+        self.quick_auto_selection = true;
+
+        if ctx.memory(|m| m.has_focus(id)) {
+            self.quick_select_all = false;
+        }
+    }
+
     fn quick_panel_content(&mut self, ui: &mut egui::Ui) {
         let palette = self.palette;
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+
+        // Must run before the input field is shown: `TextEdit` loads its
+        // cursor state at the start of its own `show`.
+        self.apply_quick_select_all(ui.ctx());
 
         // Top row: logo, big input, "open in window" action.
         let top_height = 58.0;
@@ -224,7 +287,7 @@ impl NumbatApp {
                             palette: &palette,
                             font_size: 20.0,
                             hint: "Calculate…",
-                            id: egui::Id::new("quick_input"),
+                            id: input_id(),
                         }
                         .show(ui);
 
@@ -327,10 +390,16 @@ impl NumbatApp {
                     } else {
                         "ctrl"
                     };
-                    let hint = if has_result {
-                        format!("{cmd}+C copy  ·  esc")
+                    // Escape clears a non-empty input before it closes.
+                    let escape = if input_empty {
+                        "esc close"
                     } else {
-                        "esc to close".to_owned()
+                        "esc clear"
+                    };
+                    let hint = if has_result {
+                        format!("{cmd}+C copy  ·  {escape}")
+                    } else {
+                        escape.to_owned()
                     };
                     ui.label(RichText::new(hint).size(11.0).color(palette.text_faint));
                 });

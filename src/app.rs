@@ -48,6 +48,13 @@ pub struct NumbatApp {
     /// Activation/focus retries after opening the quick panel; macOS
     /// cooperative activation often ignores a background app's first request.
     pub quick_focus_nudges: u8,
+    /// Pending "select the retained input" after opening the panel — see
+    /// `apply_quick_select_all`. Held across frames because the field only
+    /// gains focus a frame or two after the panel appears.
+    pub quick_select_all: bool,
+    /// True while the input's selection is the one *we* made on open rather
+    /// than one the user made, so ⌘C still copies the result.
+    pub quick_auto_selection: bool,
     #[cfg(target_os = "macos")]
     regular_policy_switch: RegularPolicySwitch,
     /// Where the quick panel should appear (computed from the monitor size).
@@ -160,6 +167,8 @@ impl NumbatApp {
             quick_just_opened: false,
             quick_had_focus: false,
             quick_focus_nudges: 0,
+            quick_select_all: false,
+            quick_auto_selection: false,
             #[cfg(target_os = "macos")]
             regular_policy_switch: RegularPolicySwitch::Idle,
             quick_position: None,
