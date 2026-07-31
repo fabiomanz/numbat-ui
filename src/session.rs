@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use numbat::markup::Markup;
 
-use crate::engine::Engine;
+use crate::engine::{Engine, EvalError};
 
 /// Maximum number of input lines persisted (and replayed on startup).
 const MAX_PERSISTED_HISTORY: usize = 200;
@@ -16,7 +16,7 @@ pub struct HistoryEntry {
     pub printed: Vec<Markup>,
     pub result: Option<Markup>,
     pub result_plain: Option<String>,
-    pub error: Option<String>,
+    pub error: Option<EvalError>,
 }
 
 pub struct Session {

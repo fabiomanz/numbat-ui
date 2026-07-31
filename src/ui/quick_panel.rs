@@ -10,7 +10,8 @@ use egui::{
 };
 
 use crate::app::NumbatApp;
-use crate::theme::markup_job;
+use crate::engine::EvalError;
+use crate::theme::{markup_job, Palette};
 use crate::ui::InputField;
 
 pub const PANEL_WIDTH: f32 = 680.0;
@@ -316,7 +317,7 @@ impl NumbatApp {
 
         let mut shown: Option<(egui::text::LayoutJob, Option<String>)> = None;
         let mut stale = false;
-        let mut error: Option<String> = None;
+        let mut error: Option<EvalError> = None;
         if let Some(preview) = preview {
             shown = Some((
                 markup_job(&preview.markup, &palette, 19.0),
@@ -337,71 +338,67 @@ impl NumbatApp {
         }
         let has_result = shown.is_some();
 
+        // The key hints are laid out first (right to left) so that a wrapped
+        // error message only uses the width actually left over, instead of
+        // pushing the hints off the panel.
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), ui.available_height().max(40.0)),
-            egui::Layout::left_to_right(egui::Align::Center),
+            egui::Layout::right_to_left(egui::Align::Center),
             |ui| {
                 ui.add_space(16.0);
-                ui.spacing_mut().item_spacing.x = 10.0;
+                let cmd = if cfg!(target_os = "macos") {
+                    "cmd"
+                } else {
+                    "ctrl"
+                };
+                // Escape clears a non-empty input before it closes.
+                let escape = if input_empty {
+                    "esc close"
+                } else {
+                    "esc clear"
+                };
+                let hint = if has_result {
+                    format!("{cmd}+C copy  ·  {escape}")
+                } else {
+                    escape.to_owned()
+                };
+                ui.label(RichText::new(hint).size(11.0).color(palette.text_faint));
+                ui.add_space(10.0);
 
-                match (shown, error) {
-                    (Some((job, plain)), _) => {
-                        if stale {
-                            ui.set_opacity(0.45);
-                        }
-                        ui.label(
-                            RichText::new("=")
-                                .monospace()
-                                .size(18.0)
-                                .color(palette.text_faint),
-                        );
-                        let label = ui
-                            .add(egui::Label::new(job).truncate().sense(egui::Sense::click()))
-                            .on_hover_cursor(egui::CursorIcon::Copy)
-                            .on_hover_text("Click to copy");
-                        if label.clicked() {
-                            if let Some(plain) = plain {
-                                self.copy_to_clipboard(ui.ctx(), plain);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.add_space(16.0);
+                    ui.spacing_mut().item_spacing.x = 10.0;
+
+                    match (shown, error) {
+                        (Some((job, plain)), _) => {
+                            if stale {
+                                ui.set_opacity(0.45);
+                            }
+                            ui.label(
+                                RichText::new("=")
+                                    .monospace()
+                                    .size(18.0)
+                                    .color(palette.text_faint),
+                            );
+                            let label = ui
+                                .add(egui::Label::new(job).truncate().sense(egui::Sense::click()))
+                                .on_hover_cursor(egui::CursorIcon::Copy)
+                                .on_hover_text("Click to copy");
+                            if label.clicked() {
+                                if let Some(plain) = plain {
+                                    self.copy_to_clipboard(ui.ctx(), plain);
+                                }
                             }
                         }
+                        (None, Some(error)) => error_label(ui, &error, &palette),
+                        (None, None) => {
+                            ui.label(
+                                RichText::new("Results appear as you type")
+                                    .size(12.5)
+                                    .color(palette.text_faint),
+                            );
+                        }
                     }
-                    (None, Some(error)) => {
-                        let first_line = error.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-                        ui.label(
-                            RichText::new(first_line)
-                                .monospace()
-                                .size(12.5)
-                                .color(palette.error),
-                        );
-                    }
-                    (None, None) => {
-                        ui.label(
-                            RichText::new("Results appear as you type")
-                                .size(12.5)
-                                .color(palette.text_faint),
-                        );
-                    }
-                }
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(16.0);
-                    let cmd = if cfg!(target_os = "macos") {
-                        "cmd"
-                    } else {
-                        "ctrl"
-                    };
-                    // Escape clears a non-empty input before it closes.
-                    let escape = if input_empty {
-                        "esc close"
-                    } else {
-                        "esc clear"
-                    };
-                    let hint = if has_result {
-                        format!("{cmd}+C copy  ·  {escape}")
-                    } else {
-                        escape.to_owned()
-                    };
-                    ui.label(RichText::new(hint).size(11.0).color(palette.text_faint));
                 });
             },
         );
@@ -415,4 +412,36 @@ impl NumbatApp {
             self.copy_to_clipboard(ctx, text);
         }
     }
+}
+
+/// The condensed error, wrapped into the three lines the panel has room for.
+/// The full compiler-style diagnostic is one hover away — showing it inline
+/// would not fit, and its source snippet only repeats the input field above.
+fn error_label(ui: &mut egui::Ui, error: &EvalError, palette: &Palette) {
+    let mut job = egui::text::LayoutJob::simple(
+        error.summary.clone(),
+        egui::FontId::monospace(12.5),
+        palette.error,
+        ui.available_width(),
+    );
+    job.wrap.max_rows = 3;
+    job.wrap.overflow_character = Some('…');
+    // Laid out here rather than by the `Label`: a label re-lays a `LayoutJob`
+    // with the wrapping of its `Ui` (`Extend` inside a horizontal layout,
+    // which would push the key hints off the panel), while a ready-made
+    // galley is drawn as-is.
+    let galley = ui.ctx().fonts_mut(|fonts| fonts.layout_job(job));
+
+    ui.add(egui::Label::new(galley).sense(egui::Sense::hover()))
+        .on_hover_ui(|ui| {
+            // The diagnostic aligns its span markers with the source line, so
+            // it must not be re-wrapped.
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            ui.label(
+                RichText::new(&error.full)
+                    .monospace()
+                    .size(12.0)
+                    .color(palette.error),
+            );
+        });
 }

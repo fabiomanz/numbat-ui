@@ -452,7 +452,7 @@ pub fn entry_card(
 
             if let Some(error) = &entry.error {
                 ui.label(
-                    RichText::new(error)
+                    RichText::new(&error.full)
                         .monospace()
                         .size(font_size - 1.0)
                         .color(palette.error),
