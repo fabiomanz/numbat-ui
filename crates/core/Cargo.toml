@@ -1,0 +1,12 @@
+[package]
+name = "numbat-ui-core"
+description = "Platform-independent core of Numbat UI: the numbat engine wrapper and the calculator session."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+numbat.workspace = true
+serde.workspace = true
+codespan-reporting = "0.12"

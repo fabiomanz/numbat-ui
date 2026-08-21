@@ -8,7 +8,7 @@ use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
 use egui::{Color32, CornerRadius, FontFamily, FontId, Frame, Margin, RichText, Stroke};
 
-use crate::session::{HistoryEntry, Session};
+use numbat_ui_core::{HistoryEntry, Session};
 use crate::theme::{highlight_input, markup_job, Palette};
 
 // ---------------------------------------------------------------------------

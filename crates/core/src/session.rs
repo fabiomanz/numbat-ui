@@ -1,8 +1,9 @@
-//! The calculator session shared by the main window and the quick panel:
-//! evaluated entries, the current input line, command history with
-//! navigation, the live preview cache, and history persistence.
-
-use std::path::PathBuf;
+//! The calculator session shared by every front end: evaluated entries, the
+//! current input line, command history with navigation, the live preview
+//! cache, and history persistence.
+//!
+//! Where the history is *stored* is left to the platform via
+//! [`HistoryStore`] — a file on the desktop, `localStorage` on the web.
 
 use numbat::markup::Markup;
 
@@ -10,6 +11,24 @@ use crate::engine::{Engine, EvalError};
 
 /// Maximum number of input lines persisted (and replayed on startup).
 const MAX_PERSISTED_HISTORY: usize = 200;
+
+/// Persistent storage for the submitted input lines. Only the lines are
+/// kept; the visible history and all definitions are rebuilt by replaying
+/// them through the engine on startup.
+pub trait HistoryStore {
+    fn load(&self) -> Vec<String>;
+    fn save(&self, lines: &[String]);
+}
+
+/// A store that forgets everything, for tests and throwaway sessions.
+pub struct NoHistory;
+
+impl HistoryStore for NoHistory {
+    fn load(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn save(&self, _lines: &[String]) {}
+}
 
 pub struct HistoryEntry {
     pub input: String,
@@ -27,6 +46,7 @@ pub struct Session {
 
     /// All submitted lines, in order (persisted across restarts).
     cmd_history: Vec<String>,
+    store: Box<dyn HistoryStore>,
     /// Current position while navigating with Up/Down; `None` = not navigating.
     nav_index: Option<usize>,
     /// The in-progress input stashed away when navigation started.
@@ -48,13 +68,14 @@ pub struct Preview {
 }
 
 impl Session {
-    pub fn new(engine: Engine) -> Self {
+    pub fn new(engine: Engine, store: Box<dyn HistoryStore>) -> Self {
         Self {
             engine,
             entries: Vec::new(),
             input: String::new(),
             scroll_to_bottom: false,
             cmd_history: Vec::new(),
+            store,
             nav_index: None,
             nav_stash: String::new(),
             preview_cache: None,
@@ -240,40 +261,20 @@ impl Session {
 
     // ---- Persistence -----------------------------------------------------
 
-    fn history_path() -> Option<PathBuf> {
-        dirs::data_dir().map(|dir| dir.join("numbat-ui").join("history.numbat"))
+    /// The submitted input lines, oldest first.
+    pub fn command_history(&self) -> &[String] {
+        &self.cmd_history
     }
 
     pub fn persist_history(&self) {
-        // Unit tests must not touch the real history file.
-        #[cfg(test)]
-        return;
-
-        // The debug screenshot harness submits demo lines; keep them out of
-        // the real history file.
-        #[cfg(debug_assertions)]
-        if std::env::var("NUMBAT_UI_SHOT").is_ok() {
-            return;
-        }
-
-        let Some(path) = Self::history_path() else {
-            return;
-        };
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
         let start = self.cmd_history.len().saturating_sub(MAX_PERSISTED_HISTORY);
-        let contents = self.cmd_history[start..].join("\n");
-        if let Err(e) = std::fs::write(&path, contents) {
-            log::warn!("Failed to persist history: {e}");
-        }
+        self.store.save(&self.cmd_history[start..]);
     }
 
     /// Replays persisted input lines to rebuild both the visible history and
     /// the engine state (variable/function definitions).
     pub fn restore_history(&mut self) {
-        let lines = Self::load_history_lines();
-        for line in lines {
+        for line in self.store.load() {
             if line.trim().is_empty() {
                 continue;
             }
@@ -281,15 +282,6 @@ impl Session {
             self.run_line(&line);
         }
         self.scroll_to_bottom = true;
-    }
-
-    fn load_history_lines() -> Vec<String> {
-        if let Some(path) = Self::history_path() {
-            if let Ok(contents) = std::fs::read_to_string(&path) {
-                return contents.lines().map(str::to_owned).collect();
-            }
-        }
-        legacy_history_lines().unwrap_or_default()
     }
 }
 
@@ -301,25 +293,13 @@ fn is_repl_command(line: &str) -> bool {
     )
 }
 
-/// Best-effort migration from the storage of numbat-ui 2.x, which kept the
-/// command history in eframe's `app.ron` (a RON map with an "app" key
-/// holding a RON-encoded `Vec<String>`).
-fn legacy_history_lines() -> Option<Vec<String>> {
-    let path = dirs::data_dir()?.join("Numbat UI").join("app.ron");
-    let contents = std::fs::read_to_string(path).ok()?;
-    let map: std::collections::HashMap<String, String> = ron::from_str(&contents).ok()?;
-    let lines: Vec<String> = ron::from_str(map.get("app")?).ok()?;
-    log::info!("Migrated {} history lines from numbat-ui 2.x", lines.len());
-    Some(lines)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use numbat::FormatOptions;
 
     fn session() -> Session {
-        Session::new(Engine::new(FormatOptions::default()))
+        Session::new(Engine::new(FormatOptions::default()), Box::new(NoHistory))
     }
 
     #[test]

@@ -1,18 +1,10 @@
-use std::fs;
 use std::process::Command;
-use toml::Value;
 
 #[test]
 fn test_numbat_version() {
-    // 1. Get the version of numbat from Cargo.toml
-    let cargo_toml_content = fs::read_to_string("Cargo.toml").expect("Failed to read Cargo.toml");
-    let cargo_toml: Value =
-        toml::from_str(&cargo_toml_content).expect("Failed to parse Cargo.toml");
-
-    let current_version = cargo_toml["dependencies"]["numbat"]
-        .as_str()
-        .or_else(|| cargo_toml["dependencies"]["numbat"]["version"].as_str())
-        .expect("Failed to find numbat dependency version");
+    // 1. The version of numbat we build against, exported by build.rs from
+    //    the workspace manifest.
+    let current_version = env!("NUMBAT_VERSION");
 
     println!("Current local numbat version: {}", current_version);
 

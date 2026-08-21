@@ -3,10 +3,9 @@
 mod app;
 mod autostart;
 mod config;
-mod engine;
+mod history;
 mod hotkey;
 mod platform;
-mod session;
 mod theme;
 mod ui;
 

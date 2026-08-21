@@ -60,8 +60,9 @@ jobs:
         if: matrix.platform == 'macos-latest'
         run: |
           cargo install cargo-bundle
-          # Bundle using aarch64 to get the .app structure
-          cargo bundle --release --target aarch64-apple-darwin
+          # Bundle using aarch64 to get the .app structure. Run from the
+          # desktop package: the workspace root has no binary to bundle.
+          (cd crates/desktop && cargo bundle --release --target aarch64-apple-darwin)
           # Replace the binary with a universal one via lipo
           lipo -create \
             target/aarch64-apple-darwin/release/numbat-ui \

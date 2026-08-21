@@ -10,7 +10,7 @@ use egui::{
 };
 
 use crate::app::NumbatApp;
-use crate::engine::EvalError;
+use numbat_ui_core::EvalError;
 use crate::theme::{markup_job, Palette};
 use crate::ui::InputField;
 

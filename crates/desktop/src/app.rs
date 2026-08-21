@@ -5,9 +5,9 @@
 use egui::{ViewportCommand, ViewportId};
 
 use crate::config::AppConfig;
-use crate::engine::Engine;
+use numbat_ui_core::Engine;
 use crate::hotkey::QuickPanelHotkey;
-use crate::session::Session;
+use numbat_ui_core::Session;
 use crate::theme::{self, Palette};
 use crate::ui::{CompletionState, Toasts};
 
@@ -140,7 +140,10 @@ impl NumbatApp {
             flag
         };
 
-        let mut session = Session::new(Engine::new(config.format_options()));
+        let mut session = Session::new(
+            Engine::new(config.format_options()),
+            Box::new(crate::history::FileHistoryStore),
+        );
         session.restore_history();
 
         let (hotkey, hotkey_error) =
@@ -371,7 +374,10 @@ impl NumbatApp {
     /// re-rendered with the new options. Equivalent to an app restart.
     pub fn refresh_history(&mut self) {
         let input = std::mem::take(&mut self.session.input);
-        let mut session = Session::new(Engine::new(self.config.format_options()));
+        let mut session = Session::new(
+            Engine::new(self.config.format_options()),
+            Box::new(crate::history::FileHistoryStore),
+        );
         session.restore_history();
         session.input = input;
         self.session = session;
