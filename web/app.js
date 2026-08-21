@@ -4,6 +4,8 @@ import init, { NumbatSession } from "./pkg/numbat_ui_web.js";
 
 const historyEl = document.getElementById("history");
 const placeholderEl = document.getElementById("placeholder");
+const leadEl = placeholderEl.querySelector(".lead");
+const examplesEl = placeholderEl.querySelector(".examples");
 const inputEl = document.getElementById("input");
 const previewEl = document.getElementById("preview");
 const completionsEl = document.getElementById("completions");
@@ -31,7 +33,8 @@ let previewTimer = null;
   render();
 
   inputEl.disabled = false;
-  placeholderEl.textContent = "Type an expression. Results appear as you type.";
+  leadEl.textContent = "Results appear as you type.";
+  examplesEl.hidden = false;
 
   registerServiceWorker();
 })();
@@ -46,7 +49,19 @@ async function exchangeRates() {
   }
 }
 
+examplesEl.addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  inputEl.value = button.textContent;
+  inputEl.focus();
+  schedulePreview();
+  updateCompletions();
+});
+
 // ---- Rendering -----------------------------------------------------------
+
+/** Entry count at the last render, so only genuinely new cards animate in. */
+let rendered = 0;
 
 function render() {
   const entries = JSON.parse(session.entries());
@@ -54,12 +69,17 @@ function render() {
 
   if (entries.length === 0) {
     historyEl.append(placeholderEl);
+    rendered = 0;
     return;
   }
 
-  for (const entry of entries) {
-    historyEl.append(entryElement(entry));
+  const cards = entries.map(entryElement);
+  if (entries.length > rendered) {
+    cards[cards.length - 1].classList.add("enter");
   }
+  rendered = entries.length;
+
+  historyEl.append(...cards);
   scrollToBottom();
 }
 
@@ -363,21 +383,39 @@ function toast(message) {
 // ---- iOS keyboard / viewport ---------------------------------------------
 
 // iOS does not resize the layout viewport for the keyboard, so a bottom-docked
-// input would end up underneath it. Track the visual viewport instead.
+// input would end up underneath it. Measure how much of the screen is covered
+// and lift the app's bottom edge by exactly that much.
+//
+// The catch: in a standalone home-screen app iOS reports a visual viewport
+// that is persistently *shorter* than the layout viewport by the safe-area
+// insets, keyboard or no keyboard. Taking that difference at face value leaves
+// a dead band under the key row. Since this input is the only thing on the
+// page that can raise a keyboard, the difference measured while it is not
+// focused is by definition not keyboard, and gets subtracted.
 const viewport = window.visualViewport;
 if (viewport) {
+  let inset = 0;
+
   const sync = () => {
-    document.body.style.setProperty("--vh", `${viewport.height}px`);
-    // Anything more than a sliver of missing height is the keyboard.
-    document.body.classList.toggle(
-      "keyboard",
-      window.innerHeight - viewport.height > 120
-    );
-    // Safari can leave the page itself scrolled after the keyboard animates.
-    window.scrollTo(0, 0);
+    const covered = window.innerHeight - viewport.height - viewport.offsetTop;
+
+    if (document.activeElement !== inputEl) {
+      inset = covered;
+      document.body.style.setProperty("--keyboard", "0px");
+      document.body.classList.remove("keyboard");
+      return;
+    }
+
+    const keyboard = Math.max(0, Math.round(covered - inset));
+    document.body.style.setProperty("--keyboard", `${keyboard}px`);
+    // Anything more than a sliver is a keyboard rather than rounding.
+    document.body.classList.toggle("keyboard", keyboard > 120);
   };
+
   viewport.addEventListener("resize", sync);
   viewport.addEventListener("scroll", sync);
+  inputEl.addEventListener("focus", sync);
+  inputEl.addEventListener("blur", sync);
   sync();
 }
 

@@ -24,7 +24,10 @@
   </head>
   <body>
     <header id="top-bar">
-      <h1>Numbat</h1>
+      <div class="brand">
+        <img class="mark" src="./icons/logo.png" alt="" width="28" height="28" />
+        <h1>Numbat</h1>
+      </div>
       <div class="actions">
         <button id="copy-last" type="button" title="Copy the latest result">Copy</button>
         <button id="clear" type="button" title="Clear the history view">Clear</button>
@@ -32,16 +35,22 @@
     </header>
 
     <main id="history" aria-live="polite">
-      <p id="placeholder" class="placeholder">
-        Loading the calculator…
-      </p>
+      <div id="placeholder" class="placeholder">
+        <img class="watermark" src="./icons/logo.png" alt="" width="64" height="64" />
+        <p class="lead">Loading the calculator…</p>
+        <div class="examples" hidden>
+          <button type="button">30 km/h -&gt; mph</button>
+          <button type="button">1500 kcal -&gt; kWh</button>
+          <button type="button">1 GB / 12 Mbit/s</button>
+          <button type="button">sqrt(2) * 10 cm</button>
+        </div>
+      </div>
     </main>
 
     <footer id="dock">
       <div id="completions" class="strip" hidden></div>
       <div id="preview" class="preview" hidden></div>
       <div class="input-row">
-        <span class="prompt" aria-hidden="true">&gt;</span>
         <input
           id="input"
           type="text"
@@ -56,19 +65,16 @@
         />
       </div>
       <!-- Numbat's syntax lives on characters the iOS keyboard buries. -->
-      <div id="keys" class="strip">
-        <button type="button" data-insert="->" data-label="→">→</button>
+      <div id="keys" class="strip keys">
+        <button type="button" data-insert="->">→</button>
         <button type="button" data-insert="^">^</button>
         <button type="button" data-insert="(">(</button>
         <button type="button" data-insert=")">)</button>
         <button type="button" data-insert="/">/</button>
-        <button type="button" data-insert="*">*</button>
+        <button type="button" data-insert="*">×</button>
         <button type="button" data-insert="%">%</button>
-        <button type="button" data-insert="_">_</button>
-        <button type="button" data-insert="|">|</button>
-        <span class="key-gap"></span>
-        <button type="button" data-history="up" title="Previous input">↑</button>
-        <button type="button" data-history="down" title="Next input">↓</button>
+        <button type="button" class="nav" data-history="up" title="Previous input">↑</button>
+        <button type="button" class="nav" data-history="down" title="Next input">↓</button>
       </div>
     </footer>
 

@@ -13,6 +13,7 @@ const SHELL = [
   "./exchange-rates.xml",
   "./pkg/numbat_ui_web.js",
   "./pkg/numbat_ui_web_bg.wasm",
+  "./icons/logo.png",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/apple-touch-icon.png",
