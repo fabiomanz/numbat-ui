@@ -1,0 +1,5 @@
+# `getrandom` refuses to build for wasm32-unknown-unknown unless it is told
+# which entropy source to use. Setting it here means the web crate builds with
+# a plain `cargo build -p numbat-ui-web --target wasm32-unknown-unknown`.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

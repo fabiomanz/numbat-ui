@@ -17,6 +17,8 @@ jobs:
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -29,3 +31,11 @@ jobs:
 
       - name: Run Tests
         run: cargo test --verbose
+
+      # The web crate is not in the workspace's default members (it only
+      # builds for wasm), so it needs checking explicitly or it silently rots.
+      - name: Check the web crate
+        run: cargo check -p numbat-ui-web --target wasm32-unknown-unknown --verbose
+
+      - name: Test the wasm boundary
+        run: ./scripts/test-web.sh

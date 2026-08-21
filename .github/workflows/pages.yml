@@ -1,0 +1,64 @@
+name: Deploy web app
+
+on:
+  push:
+    branches:
+      - main
+  # The exchange rates are baked into the deploy, so a rebuild is also how
+  # they stay current. The ECB publishes around 16:00 CET on working days.
+  schedule:
+    - cron: "0 16 * * 1-5"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; a half-updated site would mix wasm versions.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Keeps the wasm-bindgen CLI between runs, which is most of the time.
+          cache-bin: true
+
+      - name: Build
+        run: ./scripts/build-web.sh
+
+      - name: Test the wasm boundary
+        run: ./scripts/test-web.sh
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

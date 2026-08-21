@@ -1,0 +1,32 @@
+[package]
+name = "numbat-ui-web"
+description = "WebAssembly bindings that put the Numbat UI core behind a small JavaScript API."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+numbat-ui-core.workspace = true
+numbat.workspace = true
+serde.workspace = true
+serde_json = "1"
+# Pinned exactly: the wasm-bindgen CLI that generates the JS glue must be the
+# same version as this crate, and scripts/build-web.sh reads the version here.
+wasm-bindgen = "=0.2.126"
+console_error_panic_hook = "0.1"
+
+[dependencies.web-sys]
+version = "0.3"
+features = ["Window", "Storage"]
+
+# wasm32-unknown-unknown has no OS entropy source of its own; route `getrandom`
+# (pulled in by numbat's `random()`) through the browser's crypto API. The
+# matching `--cfg getrandom_backend="wasm_js"` lives in `.cargo/config.toml`.
+[dependencies.getrandom]
+version = "0.3"
+features = ["wasm_js"]

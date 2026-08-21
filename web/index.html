@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Numbat</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1"
+    />
+    <meta name="description" content="The Numbat scientific calculator, on your phone." />
+
+    <!-- Standalone home-screen app on iOS: no Safari chrome, dark status bar. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Numbat" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#111318" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f5f8" media="(prefers-color-scheme: light)" />
+
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="icon" href="./icons/icon-192.png" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header id="top-bar">
+      <h1>Numbat</h1>
+      <div class="actions">
+        <button id="copy-last" type="button" title="Copy the latest result">Copy</button>
+        <button id="clear" type="button" title="Clear the history view">Clear</button>
+      </div>
+    </header>
+
+    <main id="history" aria-live="polite">
+      <p id="placeholder" class="placeholder">
+        Loading the calculator…
+      </p>
+    </main>
+
+    <footer id="dock">
+      <div id="completions" class="strip" hidden></div>
+      <div id="preview" class="preview" hidden></div>
+      <div class="input-row">
+        <span class="prompt" aria-hidden="true">&gt;</span>
+        <input
+          id="input"
+          type="text"
+          autocapitalize="off"
+          autocorrect="off"
+          autocomplete="off"
+          spellcheck="false"
+          enterkeyhint="go"
+          placeholder="30 km/h -> mph"
+          aria-label="Expression"
+          disabled
+        />
+      </div>
+      <!-- Numbat's syntax lives on characters the iOS keyboard buries. -->
+      <div id="keys" class="strip">
+        <button type="button" data-insert="->" data-label="→">→</button>
+        <button type="button" data-insert="^">^</button>
+        <button type="button" data-insert="(">(</button>
+        <button type="button" data-insert=")">)</button>
+        <button type="button" data-insert="/">/</button>
+        <button type="button" data-insert="*">*</button>
+        <button type="button" data-insert="%">%</button>
+        <button type="button" data-insert="_">_</button>
+        <button type="button" data-insert="|">|</button>
+        <span class="key-gap"></span>
+        <button type="button" data-history="up" title="Previous input">↑</button>
+        <button type="button" data-history="down" title="Next input">↓</button>
+      </div>
+    </footer>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

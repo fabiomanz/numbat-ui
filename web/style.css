@@ -1,0 +1,389 @@
+/* The palette is the desktop app's (see crates/desktop/src/theme.rs), so a
+   result reads the same on both screens. */
+:root {
+  --bg: #f4f5f8;
+  --bg-raised: #eceef3;
+  --card: #ffffff;
+  --border: #dde0e8;
+  --text: #22252d;
+  --text-dim: #6e7484;
+  --text-faint: #a2a8b6;
+  --accent: #5967d6;
+  --error: #cf4a56;
+  --value: #a5760e;
+  --unit: #0e8574;
+  --keyword: #8a46bd;
+  --string: #468630;
+  --type: #345cc0;
+  --operator: #505664;
+  --decorator: #468630;
+
+  --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --radius: 12px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111318;
+    --bg-raised: #161920;
+    --card: #1a1e27;
+    --border: #2a2f3a;
+    --text: #e8eaf0;
+    --text-dim: #9aa1b0;
+    --text-faint: #626876;
+    --accent: #8f9af0;
+    --error: #ef8e96;
+    --value: #f0c674;
+    --unit: #74d4c2;
+    --keyword: #c792ea;
+    --string: #a3d78f;
+    --type: #84abf5;
+    --operator: #b4bac8;
+    --decorator: #a3d78f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  /* The layout is pinned to the *visual* viewport so the input dock rides
+     just above the iOS keyboard instead of hiding behind it. --vh is kept
+     in sync from app.js. */
+  height: var(--vh, 100dvh);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  /* iOS would otherwise scroll the whole page when the keyboard appears. */
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* Flex items default to min-width:auto, which lets the wide key row push the
+   whole app sideways. Nothing here may ever scroll the body horizontally. */
+#top-bar,
+#history,
+#dock {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ---- Top bar ---------------------------------------------------------- */
+
+#top-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(env(safe-area-inset-top), 10px) 16px 10px;
+  padding-left: max(env(safe-area-inset-left), 16px);
+  padding-right: max(env(safe-area-inset-right), 16px);
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+#top-bar h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actions button {
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-dim);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  min-height: 34px;
+}
+
+.actions button:active {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ---- History ---------------------------------------------------------- */
+
+#history {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Newest entry sits just above the input, the way a phone conversation
+     does, instead of stranding it at the top of an empty screen. */
+  justify-content: flex-end;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px;
+  padding-left: max(env(safe-area-inset-left), 12px);
+  padding-right: max(env(safe-area-inset-right), 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* `justify-content: flex-end` alone would clip overflowing content at the
+   top in some browsers; pushing only the first child down is safe. */
+#history > :first-child {
+  margin-top: auto;
+}
+
+.placeholder {
+  margin: auto;
+  color: var(--text-faint);
+  font-size: 15px;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.entry {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.entry .input {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text-dim);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.entry .result {
+  font-family: var(--mono);
+  font-size: 20px;
+  margin-top: 6px;
+  word-break: break-word;
+  white-space: pre-wrap;
+  /* Results are tappable: one tap copies. */
+  cursor: pointer;
+}
+
+.entry .printed {
+  font-family: var(--mono);
+  font-size: 13px;
+  margin-top: 6px;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.entry .error {
+  font-family: var(--mono);
+  font-size: 13px;
+  margin-top: 6px;
+  color: var(--error);
+  word-break: break-word;
+}
+
+.entry .error-more {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.entry .error-full {
+  display: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-top: 6px;
+  color: var(--text-dim);
+  /* The caret markers only line up if the text is never rewrapped, so the
+     full diagnostic scrolls sideways instead. */
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.entry.expanded .error-full {
+  display: block;
+}
+
+.entry.expanded .error-more {
+  color: var(--text-dim);
+}
+
+.entry .result .nb-type,
+.entry .result .nb-dim {
+  font-size: 0.65em;
+}
+
+.entry.copied {
+  border-color: var(--accent);
+}
+
+/* ---- Input dock ------------------------------------------------------- */
+
+#dock {
+  flex: none;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--border);
+  padding-bottom: max(env(safe-area-inset-bottom), 6px);
+}
+
+/* When the keyboard is up, the home-indicator inset no longer applies. */
+body.keyboard #dock {
+  padding-bottom: 6px;
+}
+
+.preview {
+  font-family: var(--mono);
+  font-size: 15px;
+  padding: 8px 14px 0;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview.stale {
+  opacity: 0.45;
+}
+
+.preview::before {
+  content: "= ";
+  color: var(--text-faint);
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  padding-left: max(env(safe-area-inset-left), 14px);
+  padding-right: max(env(safe-area-inset-right), 14px);
+}
+
+.prompt {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--accent);
+}
+
+#input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  /* Anything below 16px makes iOS zoom the page on focus. */
+  font-size: 17px;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+#input::placeholder {
+  color: var(--text-faint);
+}
+
+/* ---- Key row and completions ------------------------------------------ */
+
+.strip {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 max(env(safe-area-inset-left), 10px) 6px max(env(safe-area-inset-right), 10px);
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.strip button {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 16px;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  /* Comfortably tappable without eating the screen. */
+  min-width: 42px;
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.strip button:active {
+  background: var(--border);
+}
+
+.key-gap {
+  flex: 1;
+  min-width: 8px;
+}
+
+#completions {
+  padding-top: 6px;
+}
+
+#completions button {
+  font-size: 14px;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+/* ---- Toast ------------------------------------------------------------ */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 96px);
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 14px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 10;
+}
+
+.toast.show {
+  opacity: 0.95;
+}
+
+/* ---- numbat markup ---------------------------------------------------- */
+
+.nb-value { color: var(--value); }
+.nb-unit { color: var(--unit); }
+.nb-keyword { color: var(--keyword); }
+.nb-string { color: var(--string); }
+.nb-type { color: var(--type); font-style: italic; }
+.nb-operator { color: var(--operator); }
+.nb-decorator { color: var(--decorator); }
+.nb-dim { color: var(--text-dim); }
