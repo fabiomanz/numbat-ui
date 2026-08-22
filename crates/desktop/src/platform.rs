@@ -124,6 +124,30 @@ mod macos {
         }
     }
 
+    /// The frames of all screens, in points with a top-left origin (winit's
+    /// coordinate space). Empty if there are none.
+    fn screen_rects(mtm: objc2::MainThreadMarker) -> Vec<egui::Rect> {
+        use objc2_app_kit::NSScreen;
+        let screens = NSScreen::screens(mtm);
+        // Cocoa coordinates have a bottom-left origin (y grows upward),
+        // anchored to the primary screen — the first one in the list.
+        let Some(primary_height) = screens.iter().next().map(|s| s.frame().size.height) else {
+            return Vec::new();
+        };
+        screens
+            .iter()
+            .map(|screen| {
+                let frame = screen.frame();
+                let (x, y) = (frame.origin.x, frame.origin.y);
+                let (w, h) = (frame.size.width, frame.size.height);
+                egui::Rect::from_min_size(
+                    egui::pos2(x as f32, (primary_height - (y + h)) as f32),
+                    egui::vec2(w as f32, h as f32),
+                )
+            })
+            .collect()
+    }
+
     /// The frame of the screen the mouse cursor is on, in points with a
     /// top-left origin (winit's coordinate space). The quick panel opens
     /// there — like Spotlight — rather than on the main window's screen.
@@ -131,23 +155,25 @@ mod macos {
         use objc2_app_kit::{NSEvent, NSScreen};
         let mtm = objc2::MainThreadMarker::new()?;
         let mouse = NSEvent::mouseLocation();
-        let screens = NSScreen::screens(mtm);
-        // Cocoa coordinates have a bottom-left origin (y grows upward),
-        // anchored to the primary screen — the first one in the list.
-        let primary_height = screens.iter().next()?.frame().size.height;
-        for screen in screens.iter() {
-            let frame = screen.frame();
-            let (x, y) = (frame.origin.x, frame.origin.y);
-            let (w, h) = (frame.size.width, frame.size.height);
-            if mouse.x >= x && mouse.x < x + w && mouse.y >= y && mouse.y < y + h {
-                let top = primary_height - (y + h);
-                return Some(egui::Rect::from_min_size(
-                    egui::pos2(x as f32, top as f32),
-                    egui::vec2(w as f32, h as f32),
-                ));
-            }
-        }
-        None
+        let primary_height = NSScreen::screens(mtm).iter().next()?.frame().size.height;
+        let mouse = egui::pos2(mouse.x as f32, (primary_height - mouse.y) as f32);
+        screen_rects(mtm)
+            .into_iter()
+            .find(|screen| screen.contains(mouse))
+    }
+
+    /// Whether a window rect (points, top-left origin) still overlaps one of
+    /// the screens attached right now. A position the quick panel was dragged
+    /// to is kept across opens, but has to be given up once the display it
+    /// was on is gone — the panel takes keyboard focus, so opening it out of
+    /// sight would swallow what the user types.
+    pub fn intersects_a_screen(rect: egui::Rect) -> bool {
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return true;
+        };
+        screen_rects(mtm)
+            .into_iter()
+            .any(|screen| screen.intersects(rect))
     }
 
     /// Calls `on_activate` (on the main thread) whenever the app becomes

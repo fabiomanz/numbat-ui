@@ -57,8 +57,20 @@ pub struct NumbatApp {
     pub quick_auto_selection: bool,
     #[cfg(target_os = "macos")]
     regular_policy_switch: RegularPolicySwitch,
-    /// Where the quick panel should appear (computed from the monitor size).
+    /// Where the quick panel should appear (computed from the monitor size,
+    /// or dragged there by the user — see `quick_position_pinned`).
     pub quick_position: Option<egui::Pos2>,
+    /// Set once the panel has been dragged somewhere: `quick_position` is
+    /// the user's now, and is no longer recomputed on open. In memory only,
+    /// so a restart brings back the automatic placement.
+    pub quick_position_pinned: bool,
+    /// Whether the window drag was handed to the window manager during this
+    /// open (see `quick_panel_drag`).
+    pub quick_dragged: bool,
+    /// The panel window's actual position, sampled while it is open — a drag
+    /// moves the window behind egui's back, so this is where the dragged
+    /// position is read from when the panel closes.
+    pub quick_observed_position: Option<egui::Pos2>,
     pub show_settings: bool,
     quitting: bool,
     /// Consecutive frames on which the quick panel window could not be
@@ -175,6 +187,9 @@ impl NumbatApp {
             #[cfg(target_os = "macos")]
             regular_policy_switch: RegularPolicySwitch::Idle,
             quick_position: None,
+            quick_position_pinned: false,
+            quick_dragged: false,
+            quick_observed_position: None,
             show_settings: false,
             quitting: false,
             quick_panel_retries: 0,
@@ -345,6 +360,12 @@ impl NumbatApp {
 
     pub(crate) fn close_quick_panel(&mut self) {
         self.quick_open = false;
+        // Hold on to where the user dragged the panel: the window is about
+        // to be destroyed, and the next open recreates it at this position.
+        if let Some(dragged_to) = self.quick_dragged_to() {
+            self.quick_position = Some(dragged_to);
+            self.quick_position_pinned = true;
+        }
         self.quick_completion.close();
         // Activating the app for the panel raised the `reactivated` flag,
         // and `ui` could not consume it while the root window was occluded

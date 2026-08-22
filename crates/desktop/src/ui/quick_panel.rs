@@ -26,7 +26,9 @@ impl NumbatApp {
     pub fn quick_panel_viewport(&mut self, ctx: &egui::Context) {
         // Compute the position once per open — it depends on the mouse
         // location, and the panel should not follow later mouse movement.
-        if self.quick_just_opened {
+        // Once the panel has been dragged somewhere, that spot is kept
+        // instead, for as long as the app runs.
+        if self.quick_just_opened && !self.keeps_dragged_position() {
             self.quick_position = self.quick_panel_position(ctx);
         }
 
@@ -54,6 +56,31 @@ impl NumbatApp {
                 self.quick_panel_ui(ui);
             },
         );
+    }
+
+    /// Whether the position the panel was dragged to should be reused for
+    /// this open. Dropped once it would put the panel off every screen — a
+    /// display was unplugged or rearranged, and a panel that takes keyboard
+    /// focus out of sight is worse than one that moved back.
+    fn keeps_dragged_position(&self) -> bool {
+        if !self.quick_position_pinned {
+            return false;
+        }
+        let Some(position) = self.quick_position else {
+            return false;
+        };
+        #[cfg(target_os = "macos")]
+        {
+            crate::platform::intersects_a_screen(egui::Rect::from_min_size(
+                position,
+                egui::vec2(PANEL_WIDTH, PANEL_HEIGHT),
+            ))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = position;
+            true
+        }
     }
 
     /// Roughly Spotlight's position: horizontally centered, upper third —
@@ -87,6 +114,13 @@ impl NumbatApp {
             return;
         }
 
+        // Dragging the panel moves the window through the window manager,
+        // without egui's position ever changing — so sample where it really
+        // is; `close_quick_panel` keeps the last reading.
+        if let Some(rect) = ctx.input(|i| i.viewport().outer_rect) {
+            self.quick_observed_position = Some(rect.min);
+        }
+
         // A pending Edit-menu action (⌘Z/X/C/V/A) targeting this panel.
         #[cfg(target_os = "macos")]
         self.apply_edit_action(ctx);
@@ -95,6 +129,10 @@ impl NumbatApp {
             self.quick_just_opened = false;
             self.quick_had_focus = false;
             self.quick_focus_nudges = 0;
+            // Discard the reading taken above: it is from the window of the
+            // previous open, which is gone.
+            self.quick_observed_position = None;
+            self.quick_dragged = false;
             // Spotlight-style: the input is kept across closes (the session
             // is shared with the main window, so dropping it would discard a
             // draft there), but it comes up fully selected — the next
@@ -207,11 +245,48 @@ impl NumbatApp {
                         let size = egui::vec2(ui.available_width(), PANEL_HEIGHT - 2.0);
                         ui.set_min_size(size);
                         ui.set_max_size(size);
+                        // Before the content: widgets drawn on top win the
+                        // interaction, so only the bare card background drags.
+                        self.quick_panel_drag(ui);
                         self.quick_panel_content(ui);
                     });
             });
 
         self.toasts.ui(ctx, &palette, "quick");
+    }
+
+    /// Makes the card's bare background act as the title bar the borderless
+    /// panel does not have: the drag is handed to the window manager, which
+    /// moves the window itself. Where it ends up is picked up on close (see
+    /// `quick_dragged_to`), so the panel reopens there.
+    fn quick_panel_drag(&mut self, ui: &mut egui::Ui) {
+        // No cursor on hover: the whole card would claim one, and a panel
+        // this small reads as a single surface — the pointer only changes
+        // once a drag is actually under way.
+        let response = ui.interact(ui.max_rect(), ui.id().with("drag"), egui::Sense::drag());
+        if response.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        }
+        if response.drag_started_by(egui::PointerButton::Primary) {
+            self.quick_dragged = true;
+            ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
+        }
+    }
+
+    /// Where a drag left the panel, if it moved it at all. A plain click on
+    /// the background is a drag as far as egui is concerned — there is
+    /// nothing else to sense there — and must not pin a position the user
+    /// never chose, so the window has to have actually ended up elsewhere.
+    pub(crate) fn quick_dragged_to(&self) -> Option<egui::Pos2> {
+        let observed = self.quick_observed_position?;
+        if !self.quick_dragged {
+            return None;
+        }
+        match self.quick_position {
+            // A point of slack: the sampled position is derived from pixels.
+            Some(asked_for) if asked_for.distance(observed) <= 1.0 => None,
+            _ => Some(observed),
+        }
     }
 
     /// Selects the whole retained input after an open, Spotlight-style. The
