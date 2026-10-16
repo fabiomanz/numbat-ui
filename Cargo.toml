@@ -16,7 +16,7 @@ license = "MIT"
 # The single place the numbat version is declared. `build.rs` reads it from
 # here to export NUMBAT_VERSION, and the version check test asserts it is
 # the latest release on crates.io.
-numbat = { version = "1.23.0", default-features = false }
+numbat = { version = "1.24.0", default-features = false }
 numbat-ui-core = { path = "crates/core" }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
