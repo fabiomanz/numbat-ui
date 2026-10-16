@@ -22,9 +22,8 @@ cargo build --profile wasm-release -p numbat-ui-web --target wasm32-unknown-unkn
 wasm-bindgen --target nodejs --no-typescript --out-dir "$TMP" \
   target/wasm32-unknown-unknown/wasm-release/numbat_ui_web.wasm
 
-# Currency assertions are skipped if the rates cannot be fetched.
-curl -fsS --max-time 20 \
-  https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml \
-  -o "$TMP/rates.xml" || true
+# The same source the app fetches at startup (web/app.js). Currency assertions
+# are skipped if the rates cannot be fetched.
+curl -fsS --max-time 20 https://api.frankfurter.dev/v1/latest -o "$TMP/rates.json" || true
 
-node crates/web/tests/smoke.js "$TMP" "$TMP/rates.xml"
+node crates/web/tests/smoke.js "$TMP" "$TMP/rates.json"

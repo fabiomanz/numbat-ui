@@ -78,7 +78,9 @@ conversions, variables, functions, the `help`/`list`/`info` commands, live
 results as you type, and a history that survives being closed. What it adds for
 touch is a key row for the characters the phone keyboard buries (`->`, `^`,
 `(`, `)`, …) and tap-to-complete for unit and function names, in place of `Tab`.
-Currency rates are baked into each deploy and refreshed daily by the workflow.
+Currency rates are fetched when the app starts (the ECB's daily reference
+rates, via [Frankfurter](https://frankfurter.dev)) and the last ones are kept
+for offline use.
 
 ```bash
 ./scripts/build-web.sh --serve   # http://localhost:8080

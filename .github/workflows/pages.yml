@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - main
-  # The exchange rates are baked into the deploy, so a rebuild is also how
-  # they stay current. The ECB publishes around 16:00 CET on working days.
-  schedule:
-    - cron: "0 16 * * 1-5"
   workflow_dispatch:
 
 env:

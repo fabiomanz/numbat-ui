@@ -25,9 +25,7 @@ let previewTimer = null;
   await init();
 
   // Currency units need exchange rates, and numbat can only be told about
-  // them before the first session exists. The file comes from our own origin
-  // (the deploy refreshes it daily), so there is no CORS dance and the
-  // service worker keeps it available offline.
+  // them before the first session exists, so startup waits for them.
   session = new NumbatSession(await exchangeRates());
   session.restore();
   render();
@@ -39,14 +37,35 @@ let previewTimer = null;
   registerServiceWorker();
 })();
 
+// The ECB's daily reference rates, via Frankfurter: the ECB's own file sends
+// no CORS headers, so a browser cannot read it.
+const RATES_URL = "https://api.frankfurter.dev/v1/latest";
+const RATES_KEY = "numbat-ui.exchange-rates";
+// The ECB publishes once per working day; there is no point asking more often.
+const RATES_MAX_AGE = 6 * 60 * 60 * 1000;
+
+/** The rates as Frankfurter's JSON text, or undefined if there are none. */
 async function exchangeRates() {
+  let cached = null;
   try {
-    const response = await fetch("./exchange-rates.xml");
-    // A cold start with no network: currency conversion is simply unavailable.
-    return response.ok ? await response.text() : undefined;
-  } catch {
-    return undefined;
-  }
+    cached = JSON.parse(localStorage.getItem(RATES_KEY));
+  } catch {}
+  if (cached && Date.now() - cached.fetchedAt < RATES_MAX_AGE) return cached.json;
+
+  try {
+    // A slow network must not hold the whole app hostage.
+    const response = await fetch(RATES_URL, { cache: "no-cache", signal: AbortSignal.timeout(5000) });
+    if (response.ok) {
+      const json = await response.text();
+      try {
+        localStorage.setItem(RATES_KEY, JSON.stringify({ fetchedAt: Date.now(), json }));
+      } catch {}
+      return json;
+    }
+  } catch {}
+  // Offline: yesterday's rates beat none. On a cold start with no network
+  // currency conversion is simply unavailable.
+  return cached?.json;
 }
 
 examplesEl.addEventListener("click", (event) => {

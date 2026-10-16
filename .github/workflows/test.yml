@@ -37,5 +37,8 @@ jobs:
       - name: Check the web crate
         run: cargo check -p numbat-ui-web --target wasm32-unknown-unknown --verbose
 
+      - name: Test the web crate
+        run: cargo test -p numbat-ui-web --verbose
+
       - name: Test the wasm boundary
         run: ./scripts/test-web.sh

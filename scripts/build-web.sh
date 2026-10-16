@@ -59,17 +59,6 @@ fi
 sed -i.bak "s/__CACHE_VERSION__/$VERSION/" "$OUT/sw.js" && rm -f "$OUT/sw.js.bak"
 echo "==> Cache version: $VERSION"
 
-# Currency units need exchange rates. Baking them into the deploy keeps the
-# app on one origin (no CORS) and works offline; the deploy workflow reruns
-# daily to keep them current.
-echo "==> Fetching exchange rates"
-if ! curl -fsS --max-time 20 \
-  https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml \
-  -o "$OUT/exchange-rates.xml"; then
-  echo "    (unavailable — currency conversion will be off in this build)"
-  : > "$OUT/exchange-rates.xml"
-fi
-
 echo "==> Built $OUT ($(du -sh "$OUT" | cut -f1))"
 
 if [ "$SERVE" = "--serve" ]; then
